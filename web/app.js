@@ -75,6 +75,7 @@ async function handleGenerate(e) {
   const genre = document.getElementById("book-genre").value;
   const provider = document.getElementById("ai-provider").value;
   const model = document.getElementById("model-name").value.trim();
+  const ollamaUrl = document.getElementById("ollama-url").value.trim();
 
   if (!title) {
     alert("தயவுசெய்து புத்தகத்தின் தலைப்பை உள்ளிடவும்.");
@@ -98,8 +99,9 @@ async function handleGenerate(e) {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, concept, author, language, genre, provider, model })
+      body: JSON.stringify({ title, concept, author, language, genre, provider, model, ollama_url: ollamaUrl })
     });
+
 
     const data = await res.json();
     if (data.status === "started" || data.status === "ok") {
@@ -122,6 +124,11 @@ function startPolling() {
   checkStatus();
 }
 
+// Auto-start polling on initial page load
+document.addEventListener("DOMContentLoaded", () => {
+  startPolling();
+});
+
 async function checkStatus() {
   try {
     const res = await fetch("/api/status");
@@ -129,9 +136,16 @@ async function checkStatus() {
 
     updatePipelineUI(data);
 
+    if (data.status === "running") {
+      document.getElementById("progress-box").classList.remove("hidden");
+      document.getElementById("engine-status").className = "status-pill status-running";
+      document.getElementById("engine-status").textContent = "இயங்குகிறது (Generating...)";
+    }
+
     if (data.chapters && data.chapters.length > 0) {
       updateChapterTabs(data.chapters);
     }
+
 
     if (data.status === "completed") {
       clearInterval(pollTimer);
