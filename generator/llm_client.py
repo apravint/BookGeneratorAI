@@ -79,9 +79,10 @@ class LlmClient:
             "options": {
                 "temperature": 0.7,
                 "num_predict": max_tokens,
-                "num_ctx": 16384  # Expanded context window for long-form reasoning and memory
+                "num_ctx": 4096  # Optimized context size for fast local CPU inference
             }
         }
+
 
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         try:
