@@ -5,22 +5,41 @@ Includes flexible field alias choices (e.g. consequence/impact) and default fall
 """
 
 from typing import List, Dict, Optional
-from pydantic import BaseModel, Field, AliasChoices
+from pydantic import BaseModel, Field
+
+try:
+    from pydantic import AliasChoices
+    def get_rule_name_field():
+        return Field(
+            default="Core World Constraint",
+            validation_alias=AliasChoices("rule_name", "name", "rule", "title"),
+            description="Name or title of the world rule"
+        )
+    def get_narrative_consequence_field():
+        return Field(
+            default="Creates tension and cascading fallout when broken.",
+            validation_alias=AliasChoices("narrative_consequence", "consequence", "impact", "result"),
+            description="What happens when characters break or interact with this rule"
+        )
+except ImportError:
+    def get_rule_name_field():
+        return Field(
+            default="Core World Constraint",
+            description="Name or title of the world rule"
+        )
+    def get_narrative_consequence_field():
+        return Field(
+            default="Creates tension and cascading fallout when broken.",
+            description="What happens when characters break or interact with this rule"
+        )
 
 
 class WorldRule(BaseModel):
     category: str = Field(default="Systemic Rule", description="Category of rule")
-    rule_name: str = Field(
-        default="Core World Constraint",
-        validation_alias=AliasChoices("rule_name", "name", "rule", "title"),
-        description="Name or title of the world rule"
-    )
+    rule_name: str = get_rule_name_field()
     description: str = Field(default="Operational constraint governing the setting.", description="Detailed explanation")
-    narrative_consequence: str = Field(
-        default="Creates tension and cascading fallout when broken.",
-        validation_alias=AliasChoices("narrative_consequence", "consequence", "impact", "result"),
-        description="What happens when characters break or interact with this rule"
-    )
+    narrative_consequence: str = get_narrative_consequence_field()
+
 
 
 class WorldBible(BaseModel):
