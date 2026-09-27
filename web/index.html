@@ -171,17 +171,27 @@
               <label for="ai-provider"><i class="fa-solid fa-server"></i> AI Engine Provider</label>
               <select id="ai-provider" onchange="toggleProviderSettings()">
                 <option value="ollama" selected>Local Ollama (Offline / Free)</option>
+                <option value="jev">TypeSafe Jev (70ms System-One)</option>
                 <option value="gemini">Google Gemini AI</option>
                 <option value="openai">OpenAI (GPT-4o)</option>
                 <option value="anthropic">Anthropic (Claude 3.5)</option>
               </select>
+
             </div>
           </div>
 
-          <div class="form-group" id="model-name-group">
-            <label for="model-name"><i class="fa-solid fa-microchip"></i> AI Model</label>
-            <input type="text" id="model-name" value="deepseek-r1:latest" placeholder="e.g. deepseek-r1:latest, llama3:latest">
+          <div class="form-row">
+            <div class="form-group flex-1" id="model-name-group">
+              <label for="model-name"><i class="fa-solid fa-microchip"></i> AI Model</label>
+              <input type="text" id="model-name" value="deepseek-r1:latest" placeholder="e.g. deepseek-r1:latest, llama3:latest">
+            </div>
+
+            <div class="form-group flex-1" id="ollama-url-group">
+              <label for="ollama-url"><i class="fa-solid fa-network-wired"></i> Ollama Server URL</label>
+              <input type="text" id="ollama-url" value="http://localhost:11434" placeholder="e.g. http://192.168.1.15:11434">
+            </div>
           </div>
+
 
           <div class="form-actions">
             <button type="submit" id="btn-generate" class="btn btn-primary btn-large">
