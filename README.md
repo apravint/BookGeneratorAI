@@ -7,6 +7,20 @@ Unlike basic blog generators or single-prompt wrappers, **BookGenerator AI** sol
 
 ---
 
+## ⚡ The Adversarial Hook: Before & After Critic Audit
+
+Standard LLMs default to generic clichés and preachy moral summary endings. **BookGenerator AI**'s `AntiSlopEditorAgent` actively intercepts and rewrites prose:
+
+```diff
+- RAW OLLAMA PROSE:
+- "The quiet night was a testament to their unshakeable bond. Shivers ran down Clara's spine as a palpable tension filled the courtyard. Little did they know, their journey had only just begun. In conclusion, they learned that love conquers all."
+
++ ADVERSARIAL CRITIC REFINED PROSE:
++ "The courtyard fell quiet under the cold starlight. Clara gripped the stone archway, her knuckles pale against the damp granite. Julian didn't step back; he closed the distance between them until his breathing matched her own."
+```
+
+---
+
 ## 🌟 Key Highlights
 
 ### 1. 🔒 100% Private, Offline & Zero API Cost
@@ -83,7 +97,7 @@ Generates publication-ready Microsoft Word (`.docx`) documents complete with fro
 Ensure Python 3.10+ and [Ollama](https://ollama.com) are installed.
 
 ```bash
-git clone https://github.com/pravintamilan/BookGeneratorAI.git
+git clone https://github.com/apravint/BookGeneratorAI.git
 cd BookGeneratorAI
 pip install -r requirements.txt
 ```
@@ -151,31 +165,26 @@ python3 main.py \
 
 ---
 
-## 🛠 Project Architecture & File Map
+## 🗺 Project Architectural Roadmap
 
-```
-BookGeneratorAI/
-├── main.py                  # CLI entry point, environment reset & orchestration
-├── requirements.txt         # Dependencies (pydantic, python-docx)
-├── schemas/
-│   └── models.py            # Pydantic v2 schemas (WorldBible, CharacterRegistry, ChapterBeat, etc.)
-├── agents/
-│   ├── world_builder.py     # World Builder Agent (JSON extraction & World Bible)
-│   ├── character_architect.py # Character Architect Agent (Voice fingerprints & profiles)
-│   ├── master_outliner.py   # Master Outliner Agent (4-Part, 12-Chapter Beat sheets)
-│   ├── prose_drafter.py     # Iterative Beat-by-Beat Scene Drafter
-│   └── critics.py           # Adversarial Anti-Slop & Continuity Editors
-├── generator/
-│   ├── llm_client.py        # Resilient Ollama / Cloud API Client
-│   ├── blueprint.py         # Genre outline blueprints
-│   └── docx_compiler.py     # Commercial .docx compiler (Dynamic TOC & Index)
-├── memory/
-│   └── state_manager.py     # SQLite persistence engine (book_state.db)
-├── prompts/
-│   └── system_prompts.py    # Behavioral guardrails, Codex constraints & banned slop list
-└── tools/
-    └── file_writer.py       # Live incremental markdown & document writer bridge
-```
+We are actively expanding **BookGenerator AI** into the premier local-first book creation suite:
+
+- [x] **Phase 1 (Current Release)**: Multi-agent beat-by-beat scene drafting, context isolation, adversarial anti-slop critics, and local Ollama REST integration.
+- [ ] **Phase 2 (Semantic Vector Memory)**: Integration with local vector stores (ChromaDB / FAISS) for long-range semantic memory retrieval across 100k+ word manuscripts.
+- [ ] **Phase 3 (Multi-Format Export)**: Native `.epub` and publication-ready `.pdf` compilation alongside `.docx`.
+- [ ] **Phase 4 (Local Web UI)**: Lightweight local Web interface (FastAPI + React / Streamlit) for non-technical authors to review scene beats and trigger revisions visually.
+
+---
+
+## 🤝 Contributing
+
+We welcome community contributions! Please check out [`CONTRIBUTING.md`](file:///Users/pravin/Code/BookGeneratorAI/CONTRIBUTING.md) for local environment setup, fast single-chapter test runs, and guidelines.
+
+Good candidate issues labeled `good first issue`:
+- Adding EPUB / PDF exporters.
+- Writing unit tests for `AntiSlopEditorAgent` regex patterns.
+- Adding interactive CLI prompts via `rich` / `questionary`.
+- Building adapters for LM Studio or vLLM endpoints.
 
 ---
 
