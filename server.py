@@ -129,9 +129,26 @@ def run_generation_task(params):
     genre = params.get("genre", "tamil_historical")
     provider = params.get("provider", "ollama")
     model = params.get("model", "deepseek-r1:latest")
+    api_key = params.get("api_key", "").strip()
+    ollama_url = params.get("ollama_url", "http://localhost:11434")
+
+    # Set environment variables for API key
+    env_vars = os.environ.copy()
+    if api_key:
+        if provider == "gemini":
+            env_vars["GEMINI_API_KEY"] = api_key
+        elif provider == "openai":
+            env_vars["OPENAI_API_KEY"] = api_key
+        elif provider == "anthropic":
+            env_vars["ANTHROPIC_API_KEY"] = api_key
+        elif provider in ["jev", "typesafe"]:
+            env_vars["JEV_API_KEY"] = api_key
+            env_vars["TYPESAFE_API_KEY"] = api_key
+        env_vars["LLM_API_KEY"] = api_key
 
     output_filename = f"{title.replace(' ', '_')}.docx"
     output_docx_path = os.path.join(OUTPUT_DIR, output_filename)
+
 
     JOB_STATE.update({
         "status": "running",
@@ -153,9 +170,11 @@ def run_generation_task(params):
         "--genre", genre,
         "--provider", provider,
         "--model", model,
+        "--ollama-url", ollama_url,
         "--output", output_docx_path,
         "--reset"
     ]
+
 
     print(f"\n[Web Server] Launching Book Generator process: {' '.join(cmd)}")
 
@@ -163,11 +182,13 @@ def run_generation_task(params):
         proc = subprocess.Popen(
             cmd,
             cwd=BASE_DIR,
+            env=env_vars,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1
         )
+
 
         for line in iter(proc.stdout.readline, ""):
             line_str = line.strip()

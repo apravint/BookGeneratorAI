@@ -75,6 +75,7 @@ async function handleGenerate(e) {
   const genre = document.getElementById("book-genre").value;
   const provider = document.getElementById("ai-provider").value;
   const model = document.getElementById("model-name").value.trim();
+  const apiKey = document.getElementById("api-key").value.trim();
   const ollamaUrl = document.getElementById("ollama-url").value.trim();
 
   if (!title) {
@@ -99,8 +100,9 @@ async function handleGenerate(e) {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, concept, author, language, genre, provider, model, ollama_url: ollamaUrl })
+      body: JSON.stringify({ title, concept, author, language, genre, provider, model, api_key: apiKey, ollama_url: ollamaUrl })
     });
+
 
 
     const data = await res.json();
