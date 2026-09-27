@@ -12,6 +12,14 @@ class BookBlueprint:
 
     def _detect_genre(self, genre: str, title: str) -> str:
         g = genre.lower().strip()
+        if g in ["tamil_historical", "historical_tamil", "வரலாறு", "வரலாற்று_நாவல்"]:
+            return "tamil_historical"
+        if g in ["tamil_kavithai", "kavithai", "கவிதை", "கவிதைகள்"]:
+            return "tamil_kavithai"
+        if g in ["tamil_thirukkural", "thirukkural", "திருக்குறள்"]:
+            return "tamil_thirukkural"
+        if g in ["tamil_fiction", "tamil_novel", "தமிழ்_நாவல்", "தமிழ்"]:
+            return "tamil_fiction"
         if g in ["fiction", "sci-fi", "fantasy", "mystery", "thriller", "romance"]:
             return "fiction"
         if g in ["business", "leadership", "finance", "strategy"]:
@@ -25,6 +33,12 @@ class BookBlueprint:
 
         # Auto-detect from title keywords
         t = title.lower()
+        if any(w in t for w in ["சோழன்", "பாண்டியன்", "சேரன்", "பொன்னியின்", "வேள்பாரி", "வரலாறு", "காவியம்", "தஞ்சாவூர்"]):
+            return "tamil_historical"
+        if any(w in t for w in ["கவிதை", "கவிதைகள்", "காவியம்", "பாடல்"]):
+            return "tamil_kavithai"
+        if any(w in t for w in ["திருக்குறள்", "குறள்", "வள்ளுவர்"]):
+            return "tamil_thirukkural"
         if any(w in t for w in ["novel", "chronicles", "shadow", "kingdom", "galaxy", "detective", "curse", "love", "blood", "game"]):
             return "fiction"
         if any(w in t for w in ["leadership", "business", "startup", "scale", "ceo", "management", "strategy", "revenue", "profit"]):
@@ -37,7 +51,15 @@ class BookBlueprint:
         return "non-fiction"
 
     def _generate_blueprint(self):
-        if self.genre == "fiction":
+        if self.genre == "tamil_historical":
+            return self._generate_tamil_historical_blueprint()
+        elif self.genre == "tamil_kavithai":
+            return self._generate_tamil_kavithai_blueprint()
+        elif self.genre == "tamil_thirukkural":
+            return self._generate_tamil_thirukkural_blueprint()
+        elif self.genre == "tamil_fiction":
+            return self._generate_tamil_fiction_blueprint()
+        elif self.genre == "fiction":
             return self._generate_fiction_blueprint()
         elif self.genre == "business":
             return self._generate_business_blueprint()
@@ -47,6 +69,150 @@ class BookBlueprint:
             return self._generate_technical_blueprint()
         else:
             return self._generate_non_fiction_blueprint()
+
+    def _generate_tamil_historical_blueprint(self):
+        return [
+            {
+                "part": "பாகம் I: சோழ மண்டலச் சூழ்ச்சிகள் (Part I: The Chola Realm Secrets)",
+                "chapters": [
+                    { "number": 1, "title": "அத்தியாயம் 1: புயலுக்கு முன் அமைதி (The Quiet Before the Storm)", "focus": f"{self.domain} சாம்ராஜ்யத்தின் பின்னணி, இளவரசனின் அறிமுகம் மற்றும் முதல் சதி." },
+                    { "number": 2, "title": "அத்தியாயம் 2: தூதுவனின் பயணம் (The Messenger's Journey)", "focus": "காவிரி ஆற்றங்கரைப் பயணம், ஒற்றர்களின் நடமாட்டம் மற்றும் இரகசியத் தகவல்." },
+                    { "number": 3, "title": "அத்தியாயம் 3: அந்தப்புரத்து இரகசியங்கள் (Secrets of the Palace)", "focus": "அரண்மனை அரசியல், சோழ-பாண்டிய வீராங்கனைகள் மற்றும் பழங்காலச் சூழ்ச்சி." }
+                ]
+            },
+            {
+                "part": "பாகம் II: வாள்முனைக் கதைகள் (Part II: Tales of the Blade)",
+                "chapters": [
+                    { "number": 4, "title": "அத்தியாயம் 4: கடற்படைப் போர் (The Naval Fleet Battle)", "focus": "ஈழப் போர்முனை, சோழக் கடற்படையின் வீரம் மற்றும் எதிரிகளின் தந்திரம்." },
+                    { "number": 5, "title": "அத்தியாயம் 5: துரோகத்தின் நிழல் (Shadow of Betrayal)", "focus": "உடன் இருந்தவரின் துரோகம், நாயகனின் வீழ்ச்சி மற்றும் புதிய சபதம்." },
+                    { "number": 6, "title": "அத்தியாயம் 6: காடுகளின் இரகசியம் (The Secrets of the Jungle)", "focus": "தஞ்சை மாளிகை ரகசிய வழி, வேளீர் குலத் தலைவர்கள் மற்றும் இரகசியக் கூட்டணி." }
+                ]
+            },
+            {
+                "part": "பாகம் III: புயலின் நடுவே (Part III: In the Eye of the Storm)",
+                "chapters": [
+                    { "number": 7, "title": "அத்தியாயம் 7: கோட்டை முற்றுகை (Siege of the Fortress)", "focus": "மதுரைக் கோட்டை முற்றுகை, தற்காப்பு வியூகங்கள் மற்றும் நேரடி வாட்போர்." },
+                    { "number": 8, "title": "அத்தியாயம் 8: சிம்மாசனப் போராட்டம் (Battle for the Throne)", "focus": "மகுடத்திற்கான போராட்டம், தியாகம் மற்றும் உண்மை வெளிப்படுதல்." },
+                    { "number": 9, "title": "அத்தியாயம் 9: காதல் நெஞ்சம் (Heart of Devotion)", "focus": "போர்க்களத்தில் காதல், உணர்ச்சிப் போராட்டங்கள் மற்றும் பிரிவின் தவிப்பு." }
+                ]
+            },
+            {
+                "part": "பாகம் IV: வெற்றித் திலகம் (Part IV: Crown of Triumph)",
+                "chapters": [
+                    { "number": 10, "title": "அத்தியாயம் 10: இறுதிப் போர்முனை (The Final Battlefield)", "focus": "முழுமையான போர்க் களம், வியூகங்களின் வெற்றி மற்றும் எதிரியின் வீழ்ச்சி." },
+                    { "number": 11, "title": "அத்தியாயம் 11: தியாகத்தின் சிகரம் (Summit of Sacrifice)", "focus": "அரியணையைத் துறத்தல், தியாகத்தின் உயர்வு மற்றும் நீதியின் வெற்றி." },
+                    { "number": 12, "title": "அத்தியாயம் 12: புதிய உதயம் (A New Dawn)", "focus": "சோழ நாடங்கும் அமைதி, காவியத்தின் முடிவு மற்றும் காலத்தை வென்ற புகழாரம்." }
+                ]
+            }
+        ]
+
+    def _generate_tamil_kavithai_blueprint(self):
+        return [
+            {
+                "part": "பாகம் I: இயற்கையும் காதலும் (Part I: Nature & Eternal Love)",
+                "chapters": [
+                    { "number": 1, "title": "அத்தியாயம் 1: பொன்மாலை பொழுது (Golden Sunset)", "focus": "இயற்கையின் எழில், மாலைக் காற்றின் மென்மை மற்றும் காதல் கவிதைகள்." },
+                    { "number": 2, "title": "அத்தியாயம் 2: மழையும் மனமும் (Rain & The Soul)", "focus": "மழைத்துளிகளின் இசை, பிரிவின் ஏக்கம் மற்றும் கவித்துவ நயம்." },
+                    { "number": 3, "title": "அத்தியாயம் 3: நிலவின் மொழி (Language of the Moon)", "focus": "இரவின் அமைதி, நிலவொளியில் பிறந்த கவிதைகள்." }
+                ]
+            },
+            {
+                "part": "பாகம் II: சமூகமும் சிந்தனையும் (Part II: Society & Thoughts)",
+                "chapters": [
+                    { "number": 4, "title": "அத்தியாயம் 4: மானுடம் பாடுவோம் (Singing for Humanity)", "focus": "சமூக சமத்துவம், மனித நேயம் மற்றும் புரட்சிச் சிந்தனைகள்." },
+                    { "number": 5, "title": "அத்தியாயம் 5: உழைப்பின் உயர்வு (Dignity of Labor)", "focus": "பாட்டாளி வர்க்கக் கவிதைகள், உழைப்பின் கௌரவம்." },
+                    { "number": 6, "title": "அத்தியாயம் 6: தமிழ் எங்கள் மூச்சு (Tamil is Our Breath)", "focus": "தமிழ் மொழியின் இன்பம், செம்மொழிப் பெருமை மற்றும் தாய்மொழிப் பற்று." }
+                ]
+            },
+            {
+                "part": "பாகம் III: தத்துவமும் ஆன்மீகமும் (Part III: Philosophy & Spirituality)",
+                "chapters": [
+                    { "number": 7, "title": "அத்தியாயம் 7: அகத்தின் அழகு (Beauty of the Inner Soul)", "focus": "மன அமைதி, தியானம் மற்றும் வாழ்க்கைத் தத்துவம்." },
+                    { "number": 8, "title": "அத்தியாயம் 8: காலப் பெருவெளி (Cosmic Space of Time)", "focus": "காலத்தின் நகர்வு, நிலையாமை மற்றும் பிறவித் தத்துவம்." },
+                    { "number": 9, "title": "அத்தியாயம் 9: ஞானத்தின் ஒளி (Light of Wisdom)", "focus": "மெய்ஞானக் கவிதைகள், சித்தர்கள் வாக்கு மற்றும் வாழ்வியல் நெறி." }
+                ]
+            },
+            {
+                "part": "பாகம் IV: புதிய உதயம் (Part IV: A New Sunrise)",
+                "chapters": [
+                    { "number": 10, "title": "அத்தியாயம் 10: விடியலின் கீதம் (Song of Dawn)", "focus": "நம்பிக்கைக் கவிதைகள், புதிய லட்சியங்கள் மற்றும் வெற்றிப் பாதை." },
+                    { "number": 11, "title": "அத்தியாயம் 11: இளமையின் வேகம் (Youth & Energy)", "focus": "இளைஞர்களுக்கான எழுச்சிப் பாடல்கள் மற்றும் சாதனைகள்." },
+                    { "number": 12, "title": "அத்தியாயம் 12: அமரக் கவிதைகள் (Immortal Verses)", "focus": "காலத்தை வென்ற கவிதைத் தொகுப்பின் முடிவு மற்றும் வாழ்த்து." }
+                ]
+            }
+        ]
+
+    def _generate_tamil_thirukkural_blueprint(self):
+        return [
+            {
+                "part": "பாகம் I: அறத்துப்பால் - அறத்தின் நெறி (Part I: Virtue & Ethics)",
+                "chapters": [
+                    { "number": 1, "title": "அத்தியாயம் 1: கடவுள் வாழ்த்தும் வான்சிறப்பும் (Invocations)", "focus": "அகர முதல எழுத்தெல்லாம் மற்றும் மழை வளம் பற்றிய தெளிவுரை." },
+                    { "number": 2, "title": "அத்தியாயம் 2: அறன் வலியுறுத்தல் (Power of Righteousness)", "focus": "மனத்துக்கண் மாசிலன் ஆதல் மற்றும் அறத்தின் மேன்மை." },
+                    { "number": 3, "title": "அத்தியாயம் 3: இல்வாழ்க்கையும் அன்படைமையும் (Family & Love)", "focus": "அன்பும் அறனும் உடைத்தாயின் இல்வாழ்க்கை பண்பும் பயனும் அது." }
+                ]
+            },
+            {
+                "part": "பாகம் II: பொருட்பால் - அரசும் ஆளுமையும் (Part II: Governance & Wealth)",
+                "chapters": [
+                    { "number": 4, "title": "அத்தியாயம் 4: கல்வி மற்றும் கல்லாமை (Education & Knowledge)", "focus": "கற்க கசடறக் கற்பவை கற்றபின் நிற்க அதற்குத் தக." },
+                    { "number": 5, "title": "அத்தியாயம் 5: ஆள்வினை உடைமை (Leadership & Perseverance)", "focus": "தெய்வத்தான் ஆகாது எனினும் முயற்சிதன் மெய்வருத்தக் கூலி தரும்." },
+                    { "number": 6, "title": "அத்தியாயம் 6: நட்பு மற்றும் அமைச்சு (Friendship & Administration)", "focus": "செயற்கரிய செய்வார் பெரியர் மற்றும் நல்லமைச்சு நெறிகள்." }
+                ]
+            },
+            {
+                "part": "பாகம் III: காமத்துப்பால் - இன்பத்துப்பால் (Part III: Love & Emotions)",
+                "chapters": [
+                    { "number": 7, "title": "அத்தியாயம் 7: தகையணங்குறுத்தல் (Beauty of Affection)", "focus": "அணங்குகொல் ஆய்மயில் கொல்லோ மாதர் மாதர் நோக்கம்." },
+                    { "number": 8, "title": "அத்தியாயம் 8: குறிப்பறிதல் (Understanding Eyes)", "focus": "கண்ணொடு கண்இணை நோக்கொக்கின் வாய்ச்சொற்கள் என்ன பயனும் இல." },
+                    { "number": 9, "title": "அத்தியாயம் 9: புணர்ச்சி மகிழ்தல் (Joy of Union)", "focus": "கண்டு கேட்டு உண்டு உயிர்த்து உற்றறியும் ஐம்புலனும் கண் தொடி கண்ணே உளது." }
+                ]
+            },
+            {
+                "part": "பாகம் IV: வாழ்வியல் வழிகாட்டி (Part IV: Modern Life Guide)",
+                "chapters": [
+                    { "number": 10, "title": "அத்தியாயம் 10: தனிமனித ஒழுக்கம் (Personal Ethics)", "focus": "ஒழுக்கம் விழுப்பம் தரலான் ஒழுக்கம் உயிரினும் ஓம்பப் படும்." },
+                    { "number": 11, "title": "அத்தியாயம் 11: வாய்மையும் இன்னா செய்யாமையும் (Truth & Non-Violence)", "focus": "பொய்மையும் வாய்மை இடத்த புரைதீர்ந்த நன்மை பயக்கும் எனின்." },
+                    { "number": 12, "title": "அத்தியாயம் 12: திருக்குறள் காட்டும் உலகளாவிய நெறி (Universal Wisdom)", "focus": "வள்ளுவம் உலகிற்கு அளித்த நித்திய வழிகாட்டி மற்றும் தொகுப்பு." }
+                ]
+            }
+        ]
+
+    def _generate_tamil_fiction_blueprint(self):
+        return [
+            {
+                "part": "பாகம் I: தொடக்கம் மற்றும் சவால்கள் (Part I: Beginnings)",
+                "chapters": [
+                    { "number": 1, "title": "அத்தியாயம் 1: புதிய மனிதன் (The New Man)", "focus": f"{self.domain} சூழலில் கதாநாயகனின் அறிமுகம் மற்றும் வாழ்க்கை மாற்றம்." },
+                    { "number": 2, "title": "அத்தியாயம் 2: இரகசியச் சந்திப்பு (Secret Meeting)", "focus": "புதிய நண்பர்கள், எதிர்பாராத திருப்பம் மற்றும் முதல் பிரச்சனை." },
+                    { "number": 3, "title": "அத்தியாயம் 3: புதிரான பாதை (Mysterious Path)", "focus": "பழைய நினைவுகள், குடும்பப் பின்னணி மற்றும் சவால்கள்." }
+                ]
+            },
+            {
+                "part": "பாகம் II: திருப்பங்களும் திருப்புமுனைகளும் (Part II: Turning Points)",
+                "chapters": [
+                    { "number": 4, "title": "அத்தியாயம் 4: உண்மைகள் வெளிப்படுதல் (Uncovering Truths)", "focus": "எதிரிகளின் திட்டம், துரோகங்கள் மற்றும் தீவிரப் போராட்டம்." },
+                    { "number": 5, "title": "அத்தியாயம் 5: உணர்ச்சிப் போராட்டம் (Emotional Conflict)", "focus": "காதலும் குடும்பமும், மன அமைதியின்மை மற்றும் முக்கியமான முடிவு." },
+                    { "number": 6, "title": "அத்தியாயம் 6: புதிய கூட்டணி (New Alliance)", "focus": "நம்பிக்கையான நண்பர்கள் இணைதல், புதிய உத்தி வகுத்தல்." }
+                ]
+            },
+            {
+                "part": "பாகம் III: உச்சக்கட்டப் போராட்டம் (Part III: Climax Prep)",
+                "chapters": [
+                    { "number": 7, "title": "அத்தியாயம் 7: நெருக்கடி நிலை (State of Crisis)", "focus": "எதிரியின் சதி உச்சம் அடைதல், கதாநாயகனின் சோதனைக் காலம்." },
+                    { "number": 8, "title": "அத்தியாயம் 8: தைரியமான நகர்வு (Bold Move)", "focus": "எதிரிக்கு எதிரான எதிர் தாக்குதல், விறுவிறுப்பான காட்சிகள்." },
+                    { "number": 9, "title": "அத்தியாயம் 9: தியாகத்தின் எல்லை (Limits of Sacrifice)", "focus": "உண்மையான தியாகம், அன்பின் வலிமை நிரூபணம்." }
+                ]
+            },
+            {
+                "part": "பாகம் IV: வெற்றி மற்றும் நிம்மதி (Part IV: Resolution)",
+                "chapters": [
+                    { "number": 10, "title": "அத்தியாயம் 10: இறுதி மோதல் (Final Showdown)", "focus": "கடைசிப் போராட்டம், நேருக்கு நேர் மோதல், நன்மையின் வெற்றி." },
+                    { "number": 11, "title": "அத்தியாயம் 11: நீதி நிலைநாட்டப்படுதல் (Justice Restored)", "focus": "எதிரிகளின் வீழ்ச்சி, உண்மையான அமைதி திரும்புதல்." },
+                    { "number": 12, "title": "அத்தியாயம் 12: புதிய விடியல் (A Brand New Dawn)", "focus": "கதையின் நிறைவு, புதிய எதிர்கால நோக்கிய பயணம்." }
+                ]
+            }
+        ]
 
     def _generate_fiction_blueprint(self):
         return [

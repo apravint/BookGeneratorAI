@@ -118,26 +118,39 @@ def add_quote_callout(doc, quote_text):
     
     doc.add_paragraph().paragraph_format.space_after = Pt(8)
 
-def process_inline_formatting(paragraph, text):
+def get_font_name(is_heading=False, is_code=False, language="english"):
+    if language and language.lower() in ["tamil", "ta"]:
+        return "Mukta Malar"
+    if is_code:
+        return 'Consolas'
+    return 'Arial' if is_heading else 'Arial'
+
+
+def process_inline_formatting(paragraph, text, language="english"):
     tokens = re.split(r'(\*\*.*?\*\*|\*.*?\*|`.*?`)', text)
+    font_name = get_font_name(is_heading=False, is_code=False, language=language)
     for token in tokens:
         if not token:
             continue
         if token.startswith('**') and token.endswith('**'):
             run = paragraph.add_run(token[2:-2])
             run.bold = True
+            run.font.name = font_name
         elif token.startswith('*') and token.endswith('*'):
             run = paragraph.add_run(token[1:-1])
             run.italic = True
+            run.font.name = font_name
         elif token.startswith('`') and token.endswith('`'):
             run = paragraph.add_run(token[1:-1])
             run.font.name = 'Consolas'
             run.font.size = Pt(9.5)
             run.font.color.rgb = COLOR_BLUE
         else:
-            paragraph.add_run(token)
+            run = paragraph.add_run(token)
+            run.font.name = font_name
 
-def parse_markdown_file(doc, filepath):
+
+def parse_markdown_file(doc, filepath, language="english"):
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
 
@@ -146,6 +159,7 @@ def parse_markdown_file(doc, filepath):
     code_lines = []
     in_table = False
     table_rows = []
+    font_name = get_font_name(is_heading=False, language=language)
 
     for line in lines:
         stripped = line.strip()
@@ -178,7 +192,7 @@ def parse_markdown_file(doc, filepath):
             continue
         else:
             if in_table:
-                render_table(doc, table_rows)
+                render_table(doc, table_rows, language=language)
                 in_table = False
                 table_rows = []
 
@@ -192,7 +206,7 @@ def parse_markdown_file(doc, filepath):
             p.paragraph_format.space_after = Pt(16)
             p.paragraph_format.keep_with_next = True
             run = p.add_run(stripped[2:])
-            run.font.name = 'Arial'
+            run.font.name = font_name
             run.font.size = Pt(24)
             run.bold = True
             run.font.color.rgb = COLOR_NAVY
@@ -203,7 +217,7 @@ def parse_markdown_file(doc, filepath):
             p.paragraph_format.space_after = Pt(12)
             p.paragraph_format.keep_with_next = True
             run = p.add_run(stripped[3:])
-            run.font.name = 'Arial'
+            run.font.name = font_name
             run.font.size = Pt(20)
             run.bold = True
             run.font.color.rgb = COLOR_BLUE
@@ -217,7 +231,7 @@ def parse_markdown_file(doc, filepath):
             p.paragraph_format.space_after = Pt(6)
             p.paragraph_format.keep_with_next = True
             run = p.add_run(heading_text)
-            run.font.name = 'Arial'
+            run.font.name = font_name
             run.font.size = Pt(14)
             run.bold = True
             run.font.color.rgb = COLOR_NAVY
@@ -227,7 +241,7 @@ def parse_markdown_file(doc, filepath):
             p.paragraph_format.space_after = Pt(4)
             p.paragraph_format.keep_with_next = True
             run = p.add_run(stripped[5:])
-            run.font.name = 'Arial'
+            run.font.name = font_name
             run.font.size = Pt(12)
             run.bold = True
             run.font.color.rgb = COLOR_TEAL
@@ -236,25 +250,26 @@ def parse_markdown_file(doc, filepath):
             p.paragraph_format.space_before = Pt(3)
             p.paragraph_format.space_after = Pt(3)
             p.paragraph_format.line_spacing = 1.2
-            process_inline_formatting(p, stripped[2:])
+            process_inline_formatting(p, stripped[2:], language=language)
         elif re.match(r'^\d+\.\s', stripped):
             p = doc.add_paragraph(style='List Number')
             p.paragraph_format.space_before = Pt(3)
             p.paragraph_format.space_after = Pt(3)
             p.paragraph_format.line_spacing = 1.2
             text_without_num = re.sub(r'^\d+\.\s', '', stripped)
-            process_inline_formatting(p, text_without_num)
+            process_inline_formatting(p, text_without_num, language=language)
         else:
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(4)
             p.paragraph_format.space_after = Pt(8)
             p.paragraph_format.line_spacing = 1.25
-            process_inline_formatting(p, stripped)
+            process_inline_formatting(p, stripped, language=language)
 
     if in_table and table_rows:
-        render_table(doc, table_rows)
+        render_table(doc, table_rows, language=language)
 
-def render_table(doc, rows):
+
+def render_table(doc, rows, language="english"):
     if not rows:
         return
     num_cols = max(len(row) for row in rows)
@@ -270,7 +285,7 @@ def render_table(doc, rows):
                 p.paragraph_format.space_before = Pt(5)
                 p.paragraph_format.space_after = Pt(5)
                 p.paragraph_format.line_spacing = 1.2
-                process_inline_formatting(p, cell_value)
+                process_inline_formatting(p, cell_value, language=language)
                 
                 if row_idx == 0:
                     set_cell_background(cell, COLOR_TABLE_HEADER)
@@ -283,10 +298,12 @@ def render_table(doc, rows):
                 set_cell_margins(cell, top=100, bottom=100, left=140, right=140)
     doc.add_paragraph().paragraph_format.space_after = Pt(8)
 
-def build_front_cover(doc, title, domain, author):
+
+def build_front_cover(doc, title, domain, author, language="english"):
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
+    font_name = get_font_name(language=language)
     
     cell = table.cell(0, 0)
     cell.width = Inches(6.0)
@@ -298,7 +315,7 @@ def build_front_cover(doc, title, domain, author):
     p_title.paragraph_format.space_before = Pt(50)
     p_title.paragraph_format.space_after = Pt(18)
     r_title = p_title.add_run(title)
-    r_title.font.name = 'Arial'
+    r_title.font.name = font_name
     r_title.font.size = Pt(28)
     r_title.bold = True
     r_title.font.color.rgb = RGBColor(255, 255, 255)
@@ -306,8 +323,9 @@ def build_front_cover(doc, title, domain, author):
     p_sub = cell.add_paragraph()
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_sub.paragraph_format.space_after = Pt(50)
-    r_sub = p_sub.add_run("THE INTERNATIONAL BESTSELLER")
-    r_sub.font.name = 'Arial'
+    bestseller_label = "உலகளாவிய புகழ்பெற்ற பதிப்பு" if language in ["tamil", "ta"] else "THE INTERNATIONAL BESTSELLER"
+    r_sub = p_sub.add_run(bestseller_label)
+    r_sub.font.name = font_name
     r_sub.font.size = Pt(13)
     r_sub.bold = True
     r_sub.font.color.rgb = COLOR_BLUE
@@ -315,8 +333,9 @@ def build_front_cover(doc, title, domain, author):
     p_domain = cell.add_paragraph()
     p_domain.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_domain.paragraph_format.space_after = Pt(140)
-    r_domain = p_domain.add_run(f"CORE SUBJECT: {domain.upper()}")
-    r_domain.font.name = 'Arial'
+    subject_label = f"முதன்மைப் பொருள்: {domain}" if language in ["tamil", "ta"] else f"CORE SUBJECT: {domain.upper()}"
+    r_domain = p_domain.add_run(subject_label)
+    r_domain.font.name = font_name
     r_domain.font.size = Pt(10)
     r_domain.bold = True
     r_domain.font.color.rgb = COLOR_TEAL
@@ -325,44 +344,50 @@ def build_front_cover(doc, title, domain, author):
     p_author.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_author.paragraph_format.space_after = Pt(40)
     
-    r_by = p_author.add_run("AUTHOR\n")
-    r_by.font.name = 'Arial'
+    author_header = "ஆசிரியர்\n" if language in ["tamil", "ta"] else "AUTHOR\n"
+    r_by = p_author.add_run(author_header)
+    r_by.font.name = font_name
     r_by.font.size = Pt(10)
     r_by.font.color.rgb = RGBColor(148, 163, 184)
     
     r_author = p_author.add_run(author)
-    r_author.font.name = 'Arial'
+    r_author.font.name = font_name
     r_author.font.size = Pt(22)
     r_author.bold = True
     r_author.font.color.rgb = COLOR_GOLD
 
     doc.add_page_break()
 
-def build_half_title_page(doc, title):
+
+def build_half_title_page(doc, title, language="english"):
+    font_name = get_font_name(language=language)
     p_ht = doc.add_paragraph()
     p_ht.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_ht.paragraph_format.space_before = Pt(200)
     r_ht = p_ht.add_run(title)
-    r_ht.font.name = 'Arial'
+    r_ht.font.name = font_name
     r_ht.font.size = Pt(22)
     r_ht.bold = True
     r_ht.font.color.rgb = COLOR_NAVY
     doc.add_page_break()
 
-def build_title_and_copyright_page(doc, title, author):
+
+def build_title_and_copyright_page(doc, title, author, language="english"):
+    font_name = get_font_name(language=language)
     p_t = doc.add_paragraph()
     p_t.paragraph_format.space_before = Pt(50)
     p_t.paragraph_format.space_after = Pt(14)
     r_t = p_t.add_run(title)
-    r_t.font.name = 'Arial'
+    r_t.font.name = font_name
     r_t.font.size = Pt(24)
     r_t.bold = True
     r_t.font.color.rgb = COLOR_NAVY
 
     p_a = doc.add_paragraph()
     p_a.paragraph_format.space_after = Pt(220)
-    r_a = p_a.add_run(f"By {author}")
-    r_a.font.name = 'Arial'
+    by_author = f"எழுதியவர் {author}" if language in ["tamil", "ta"] else f"By {author}"
+    r_a = p_a.add_run(by_author)
+    r_a.font.name = font_name
     r_a.font.size = Pt(14)
     r_a.bold = True
     r_a.font.color.rgb = COLOR_BLUE
@@ -370,32 +395,23 @@ def build_title_and_copyright_page(doc, title, author):
     p_c = doc.add_paragraph()
     p_c.paragraph_format.space_before = Pt(120)
     p_c.paragraph_format.line_spacing = 1.2
-    r_c = p_c.add_run(
-        f"{title}\n"
-        f"Copyright © 2026 by {author}. All rights reserved."
-    )
-    r_c.font.name = 'Arial'
+    copy_label = f"{title}\nகாப்புரிமை © 2026 - {author}. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை." if language in ["tamil", "ta"] else f"{title}\nCopyright © 2026 by {author}. All rights reserved."
+    r_c = p_c.add_run(copy_label)
+    r_c.font.name = font_name
     r_c.font.size = Pt(9.5)
     r_c.font.color.rgb = COLOR_DARK_GRAY
 
     doc.add_page_break()
 
-def build_toc(doc):
-    toc_p = doc.add_paragraph()
-    toc_p.paragraph_format.space_before = Pt(24)
-    toc_p.paragraph_format.space_after = Pt(16)
-    run_toc = toc_p.add_run("Table of Contents")
-    run_toc.font.name = 'Arial'
-    run_toc.font.size = Pt(22)
-    run_toc.bold = True
-    run_toc.font.color.rgb = COLOR_NAVY
 
-def build_toc(doc, chapters_dir):
+def build_toc(doc, chapters_dir, language="english"):
+    font_name = get_font_name(language=language)
     toc_p = doc.add_paragraph()
     toc_p.paragraph_format.space_before = Pt(24)
     toc_p.paragraph_format.space_after = Pt(16)
-    run_toc = toc_p.add_run("Table of Contents")
-    run_toc.font.name = 'Arial'
+    toc_title = "பொருளடக்கம்" if language in ["tamil", "ta"] else "Table of Contents"
+    run_toc = toc_p.add_run(toc_title)
+    run_toc.font.name = font_name
     run_toc.font.size = Pt(22)
     run_toc.bold = True
     run_toc.font.color.rgb = COLOR_NAVY
@@ -414,9 +430,9 @@ def build_toc(doc, chapters_dir):
                 chap_title = ""
                 for line in lines:
                     line_str = line.strip()
-                    if line_str.startswith("# Part"):
+                    if line_str.startswith("# Part") or line_str.startswith("# பகுதி"):
                         part_title = line_str.replace("#", "").strip()
-                    elif line_str.startswith("## Chapter"):
+                    elif line_str.startswith("## Chapter") or line_str.startswith("## அத்தியாயம்"):
                         chap_title = line_str.replace("##", "").strip()
 
                 if part_title and part_title not in seen_parts:
@@ -428,16 +444,25 @@ def build_toc(doc, chapters_dir):
                     toc_entries.append((chap_title, False, str(page_counter)))
                     page_counter += 24
                 else:
-                    toc_entries.append((f"Chapter {i}", False, str(page_counter)))
+                    default_chap = f"அத்தியாயம் {i}" if language in ["tamil", "ta"] else f"Chapter {i}"
+                    toc_entries.append((default_chap, False, str(page_counter)))
                     page_counter += 24
 
     # Appendices and Glossary
-    toc_entries.append(("Appendices & Glossary", True, str(page_counter)))
-    toc_entries.append(("Appendix A: Comprehensive Reference Guide", False, str(page_counter + 2)))
-    toc_entries.append(("Appendix B: Deep Case Studies & Structural Playbooks", False, str(page_counter + 10)))
-    toc_entries.append(("Appendix C: Executive Framework Checklists & Resources", False, str(page_counter + 18)))
-    toc_entries.append(("Key Concepts & Terminology Guide", False, str(page_counter + 24)))
-    toc_entries.append(("Index of Concepts & Terms", False, str(page_counter + 28)))
+    if language in ["tamil", "ta"]:
+        toc_entries.append(("இணைப்புகள் & கலைச்சொற்கள்", True, str(page_counter)))
+        toc_entries.append(("இணைப்பு A: விரிவான குறிப்பேடு", False, str(page_counter + 2)))
+        toc_entries.append(("இணைப்பு B: ஆழ்ந்த ஆய்வுகள் & வழிகாட்டி", False, str(page_counter + 10)))
+        toc_entries.append(("இணைப்பு C: முக்கிய சட்டகங்கள் & வளங்கள்", False, str(page_counter + 18)))
+        toc_entries.append(("முக்கியக் கருத்துகள் & கலைச்சொல் வழிகாட்டி", False, str(page_counter + 24)))
+        toc_entries.append(("சொற்களின் அகராதி", False, str(page_counter + 28)))
+    else:
+        toc_entries.append(("Appendices & Glossary", True, str(page_counter)))
+        toc_entries.append(("Appendix A: Comprehensive Reference Guide", False, str(page_counter + 2)))
+        toc_entries.append(("Appendix B: Deep Case Studies & Structural Playbooks", False, str(page_counter + 10)))
+        toc_entries.append(("Appendix C: Executive Framework Checklists & Resources", False, str(page_counter + 18)))
+        toc_entries.append(("Key Concepts & Terminology Guide", False, str(page_counter + 24)))
+        toc_entries.append(("Index of Concepts & Terms", False, str(page_counter + 28)))
 
     for title_text, is_part, page_num in toc_entries:
         p = doc.add_paragraph()
@@ -445,7 +470,7 @@ def build_toc(doc, chapters_dir):
         p.paragraph_format.space_after = Pt(3)
         if is_part:
             run = p.add_run(title_text)
-            run.font.name = 'Arial'
+            run.font.name = font_name
             run.font.size = Pt(11.5)
             run.bold = True
             run.font.color.rgb = COLOR_BLUE
@@ -453,18 +478,21 @@ def build_toc(doc, chapters_dir):
             p.paragraph_format.left_indent = Inches(0.25)
             dots = " . " * max(1, int((55 - len(title_text)) / 2))
             run = p.add_run(f"{title_text} {dots} {page_num}")
-            run.font.name = 'Arial'
+            run.font.name = font_name
             run.font.size = Pt(10)
             run.font.color.rgb = COLOR_DARK_GRAY
 
     doc.add_page_break()
 
-def build_index_page(doc, chapters_dir):
+
+def build_index_page(doc, chapters_dir, language="english"):
+    font_name = get_font_name(language=language)
     p_idx = doc.add_paragraph()
     p_idx.paragraph_format.space_before = Pt(24)
     p_idx.paragraph_format.space_after = Pt(14)
-    run_idx = p_idx.add_run("Index of Concepts & Terms")
-    run_idx.font.name = 'Arial'
+    idx_title = "சொற்கள் மற்றும் கருத்துகளின் அகராதி" if language in ["tamil", "ta"] else "Index of Concepts & Terms"
+    run_idx = p_idx.add_run(idx_title)
+    run_idx.font.name = font_name
     run_idx.font.size = Pt(22)
     run_idx.bold = True
     run_idx.font.color.rgb = COLOR_NAVY
@@ -475,26 +503,27 @@ def build_index_page(doc, chapters_dir):
         if fname.endswith(".md"):
             with open(os.path.join(chapters_dir, fname), "r", encoding="utf-8") as f:
                 content = f.read()
-                # Find capitalized terms or bold terms
-                found = re.findall(r'\*\*([A-Z][a-zA-Z\s]{2,25})\*\*', content)
+                found = re.findall(r'\*\*([^\*\n]{2,30})\*\*', content)
                 for item in found:
                     words.add(item.strip())
 
     if not words:
-        words = {"Action Frameworks", "Boundary Setting", "Core Principles", "Digital Transformation", "Emotional Alignment", "Leadership Models", "Paradigm Shift", "Resilience Vectors", "System Execution"}
+        if language in ["tamil", "ta"]:
+            words = {"அரசியல் தந்திரம்", "காவியக் கதை", "வீரம்", "நீதிநெறி", "அரசாட்சி", "போர் உத்தி", "வாழ்க்கை தத்துவம்", "அறநெறி"}
+        else:
+            words = {"Action Frameworks", "Boundary Setting", "Core Principles", "Digital Transformation", "Emotional Alignment", "Leadership Models", "Paradigm Shift", "Resilience Vectors", "System Execution"}
 
     grouped = {}
     for word in sorted(words):
         letter = word[0].upper()
-        if letter.isalpha():
-            grouped.setdefault(letter, []).append(f"{word}, 15-280")
+        grouped.setdefault(letter, []).append(f"{word}, 15-280")
 
     for letter, items in sorted(grouped.items())[:12]:
         p_letter = doc.add_paragraph()
         p_letter.paragraph_format.space_before = Pt(10)
         p_letter.paragraph_format.space_after = Pt(3)
         r_l = p_letter.add_run(letter)
-        r_l.font.name = 'Arial'
+        r_l.font.name = font_name
         r_l.font.size = Pt(14)
         r_l.bold = True
         r_l.font.color.rgb = COLOR_BLUE
@@ -505,16 +534,18 @@ def build_index_page(doc, chapters_dir):
             p_item.paragraph_format.space_before = Pt(2)
             p_item.paragraph_format.space_after = Pt(2)
             r_i = p_item.add_run(item)
-            r_i.font.name = 'Arial'
+            r_i.font.name = font_name
             r_i.font.size = Pt(10)
             r_i.font.color.rgb = COLOR_DARK_GRAY
 
     doc.add_page_break()
 
-def build_back_cover(doc, title, author):
+
+def build_back_cover(doc, title, author, language="english"):
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
+    font_name = get_font_name(language=language)
     
     cell = table.cell(0, 0)
     cell.width = Inches(6.0)
@@ -525,8 +556,9 @@ def build_back_cover(doc, title, author):
     p_head.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_head.paragraph_format.space_before = Pt(30)
     p_head.paragraph_format.space_after = Pt(18)
-    r_head = p_head.add_run("THE INTERNATIONAL BESTSELLER")
-    r_head.font.name = 'Arial'
+    head_label = "உலகளாவிய புகழ்பெற்ற பதிப்பு" if language in ["tamil", "ta"] else "THE INTERNATIONAL BESTSELLER"
+    r_head = p_head.add_run(head_label)
+    r_head.font.name = font_name
     r_head.font.size = Pt(16)
     r_head.bold = True
     r_head.font.color.rgb = COLOR_GOLD
@@ -534,20 +566,25 @@ def build_back_cover(doc, title, author):
     p_desc = cell.add_paragraph()
     p_desc.paragraph_format.line_spacing = 1.25
     p_desc.paragraph_format.space_after = Pt(30)
-    r_desc = p_desc.add_run(
-        f"This 300-page masterpiece delivers an unmissable blueprint for mastering {title}. "
-        f"Loved by readers worldwide, this book combines gripping storytelling, deep strategic insights, "
-        f"and actionable frameworks designed to inspire, transform, and empower."
-    )
-    r_desc.font.name = 'Arial'
+    if language in ["tamil", "ta"]:
+        desc_text = f"இந்த 300 பக்க காவியப் படைப்பு '{title}' தலைப்பில் ஒப்பற்ற உலகளாவிய படைப்பாகும். ஆழமான சிந்தனை, சுவையான கதைக்கூறல் மற்றும் உயர் தத்துவங்கள் அடங்கிய காவிய நூல்."
+    else:
+        desc_text = (
+            f"This 300-page masterpiece delivers an unmissable blueprint for mastering {title}. "
+            f"Loved by readers worldwide, this book combines gripping storytelling, deep strategic insights, "
+            f"and actionable frameworks designed to inspire, transform, and empower."
+        )
+    r_desc = p_desc.add_run(desc_text)
+    r_desc.font.name = font_name
     r_desc.font.size = Pt(10.5)
     r_desc.font.color.rgb = RGBColor(241, 245, 249)
 
     p_bio_title = cell.add_paragraph()
     p_bio_title.paragraph_format.space_before = Pt(10)
     p_bio_title.paragraph_format.space_after = Pt(4)
-    r_bio_title = p_bio_title.add_run("ABOUT THE AUTHOR")
-    r_bio_title.font.name = 'Arial'
+    bio_title = "ஆசிரியர் பற்றி" if language in ["tamil", "ta"] else "ABOUT THE AUTHOR"
+    r_bio_title = p_bio_title.add_run(bio_title)
+    r_bio_title.font.name = font_name
     r_bio_title.font.size = Pt(12)
     r_bio_title.bold = True
     r_bio_title.font.color.rgb = COLOR_BLUE
@@ -555,23 +592,30 @@ def build_back_cover(doc, title, author):
     p_bio = cell.add_paragraph()
     p_bio.paragraph_format.line_spacing = 1.2
     p_bio.paragraph_format.space_after = Pt(40)
-    r_bio = p_bio.add_run(
-        f"{author} is an Author and Global Thought Leader whose works inspire readers worldwide. "
-        f"Renowned for turning complex topics into captivating, clear, and actionable reads."
-    )
-    r_bio.font.name = 'Arial'
+    if language in ["tamil", "ta"]:
+        bio_text = f"{author} உலகப் புகழ்பெற்ற எழுத்தாளர் மற்றும் சிந்தனையாளர். ஆழமானக் கருத்துகளை எளிய தமிழ் நடையில் படைக்கும் வல்லமை படைத்தவர்."
+    else:
+        bio_text = (
+            f"{author} is an Author and Global Thought Leader whose works inspire readers worldwide. "
+            f"Renowned for turning complex topics into captivating, clear, and actionable reads."
+        )
+    r_bio = p_bio.add_run(bio_text)
+    r_bio.font.name = font_name
     r_bio.font.size = Pt(10)
     r_bio.font.color.rgb = RGBColor(203, 213, 225)
 
     p_footer = cell.add_paragraph()
     p_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_foot = p_footer.add_run("CATEGORY: NON-FICTION / BESTSELLER / SYSTEM DESIGN\nPRICE: $69.99 US / $89.99 CAN")
-    r_foot.font.name = 'Arial'
+    footer_text = "வகை: தமிழ் இலக்கியம் / காவியம் / சிறப்புப் பதிப்பு\nவிலை: ₹499 INR" if language in ["tamil", "ta"] else "CATEGORY: NON-FICTION / BESTSELLER / SYSTEM DESIGN\nPRICE: $69.99 US / $89.99 CAN"
+    r_foot = p_footer.add_run(footer_text)
+    r_foot.font.name = font_name
     r_foot.font.size = Pt(9)
     r_foot.font.color.rgb = RGBColor(148, 163, 184)
 
-def compile_book(title: str, domain: str, author: str, chapters_dir: str, output_path: str):
+
+def compile_book(title: str, domain: str, author: str, chapters_dir: str, output_path: str, language: str = "english"):
     doc = docx.Document()
+    font_name = get_font_name(language=language)
     
     for section in doc.sections:
         section.top_margin = Inches(1.25)
@@ -580,40 +624,40 @@ def compile_book(title: str, domain: str, author: str, chapters_dir: str, output
         section.right_margin = Inches(1.25)
 
     # 1. Front Cover
-    build_front_cover(doc, title, domain, author)
+    build_front_cover(doc, title, domain, author, language=language)
 
     # 2. Half Title Page
-    build_half_title_page(doc, title)
+    build_half_title_page(doc, title, language=language)
 
     # 3. Praise Page
     praise_path = os.path.join(chapters_dir, "praise.md")
     if os.path.exists(praise_path):
-        parse_markdown_file(doc, praise_path)
+        parse_markdown_file(doc, praise_path, language=language)
         doc.add_page_break()
 
     # 4. Title & Copyright Page
-    build_title_and_copyright_page(doc, title, author)
+    build_title_and_copyright_page(doc, title, author, language=language)
 
     # 5. Epigraph Page
     epigraph_path = os.path.join(chapters_dir, "epigraph.md")
     if os.path.exists(epigraph_path):
-        parse_markdown_file(doc, epigraph_path)
+        parse_markdown_file(doc, epigraph_path, language=language)
         doc.add_page_break()
 
     # 6. Preface Page
     preface_path = os.path.join(chapters_dir, "preface.md")
     if os.path.exists(preface_path):
-        parse_markdown_file(doc, preface_path)
+        parse_markdown_file(doc, preface_path, language=language)
         doc.add_page_break()
 
     # 7. Foreword Page
     foreword_path = os.path.join(chapters_dir, "foreword.md")
     if os.path.exists(foreword_path):
-        parse_markdown_file(doc, foreword_path)
+        parse_markdown_file(doc, foreword_path, language=language)
         doc.add_page_break()
 
     # 8. Table of Contents
-    build_toc(doc, chapters_dir)
+    build_toc(doc, chapters_dir, language=language)
 
     # 9. Header & Footer
     body_section = doc.sections[0]
@@ -621,7 +665,7 @@ def compile_book(title: str, domain: str, author: str, chapters_dir: str, output
     hp = header.paragraphs[0]
     hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     hrun = hp.add_run(f"{title} | {author}")
-    hrun.font.name = 'Arial'
+    hrun.font.name = font_name
     hrun.font.size = Pt(8.5)
     hrun.font.color.rgb = COLOR_DARK_GRAY
 
@@ -629,7 +673,7 @@ def compile_book(title: str, domain: str, author: str, chapters_dir: str, output
     fp = footer.paragraphs[0]
     fp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     frun = fp.add_run(title)
-    frun.font.name = 'Arial'
+    frun.font.name = font_name
     frun.font.size = Pt(8.5)
     frun.font.color.rgb = COLOR_DARK_GRAY
 
@@ -640,7 +684,7 @@ def compile_book(title: str, domain: str, author: str, chapters_dir: str, output
         
         if os.path.exists(chap_path):
             print(f"Compiling {chap_filename}...")
-            parse_markdown_file(doc, chap_path)
+            parse_markdown_file(doc, chap_path, language=language)
             doc.add_page_break()
 
     # 11. Process Appendices
@@ -649,21 +693,21 @@ def compile_book(title: str, domain: str, author: str, chapters_dir: str, output
         app_path = os.path.join(chapters_dir, app_file)
         if os.path.exists(app_path):
             print(f"Compiling {app_file}...")
-            parse_markdown_file(doc, app_path)
+            parse_markdown_file(doc, app_path, language=language)
             doc.add_page_break()
 
     # 12. Technical Glossary
     glossary_path = os.path.join(chapters_dir, "glossary.md")
     if os.path.exists(glossary_path):
-        print("Compiling Technical Glossary...")
-        parse_markdown_file(doc, glossary_path)
+        print("Compiling Glossary...")
+        parse_markdown_file(doc, glossary_path, language=language)
         doc.add_page_break()
 
     # 13. Index
-    build_index_page(doc, chapters_dir)
+    build_index_page(doc, chapters_dir, language=language)
 
     # 14. Back Cover
-    build_back_cover(doc, title, author)
+    build_back_cover(doc, title, author, language=language)
 
     doc.save(output_path)
-    print(f"\nSuccessfully compiled world-class bestseller manuscript to: {output_path}")
+    print(f"\nSuccessfully compiled manuscript to: {output_path}")

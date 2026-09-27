@@ -19,7 +19,9 @@ from generator.llm_client import LlmClient
 from prompts.system_prompts import (
     CONTINUITY_EDITOR_PROMPT,
     ANTI_SLOP_EDITOR_PROMPT,
-    FORBIDDEN_SLOP_PATTERNS
+    FORBIDDEN_SLOP_PATTERNS,
+    TAMIL_FORBIDDEN_SLOP_PATTERNS,
+    TAMIL_ANTI_SLOP_EDITOR_PROMPT
 )
 
 
@@ -63,11 +65,15 @@ class AntiSlopEditorAgent:
     def __init__(self, llm_client: LlmClient):
         self.llm = llm_client
 
-    def audit_slop(self, chapter_number: int, chapter_text: str) -> List[AntiSlopViolation]:
+    def audit_slop(self, chapter_number: int, chapter_text: str, language: str = "english") -> List[AntiSlopViolation]:
         violations = []
         text_lower = chapter_text.lower()
 
-        for pattern in FORBIDDEN_SLOP_PATTERNS:
+        patterns = FORBIDDEN_SLOP_PATTERNS
+        if language and language.lower() in ["tamil", "ta"]:
+            patterns = patterns + TAMIL_FORBIDDEN_SLOP_PATTERNS
+
+        for pattern in patterns:
             if pattern in text_lower:
                 violations.append(AntiSlopViolation(
                     phrase_or_pattern=pattern,
@@ -80,7 +86,8 @@ class AntiSlopEditorAgent:
         lines = [l.strip() for l in chapter_text.split("\n") if l.strip()]
         if lines:
             last_line = lines[-1].lower()
-            if any(w in last_line for w in ["in conclusion", "testament", "reminder that", "chapter in their lives", "journey had just begun"]):
+            moral_phrases = ["in conclusion", "testament", "reminder that", "chapter in their lives", "journey had just begun", "முடிவாக", "ஒரு பாடமாக", "நினைவூட்டலாக", "தொடங்கியது மட்டுமே"]
+            if any(w in last_line for w in moral_phrases):
                 violations.append(AntiSlopViolation(
                     phrase_or_pattern="Moralizing Chapter Conclusion",
                     line_snippet=lines[-1][:100],
@@ -104,11 +111,12 @@ class MasterAdversarialReviewer:
         registry: CharacterRegistry,
         story_state: StoryState
     ) -> RevisionBrief:
+        lang = getattr(world_bible, "language", "english")
         cont_issues = self.continuity_editor.audit_chapter(
             chapter_beat.chapter_number, chapter_text, world_bible, registry, story_state
         )
         slop_violations = self.anti_slop_editor.audit_slop(
-            chapter_beat.chapter_number, chapter_text
+            chapter_beat.chapter_number, chapter_text, language=lang
         )
 
         passed = len(cont_issues) == 0 and len(slop_violations) == 0

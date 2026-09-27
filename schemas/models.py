@@ -26,6 +26,7 @@ class WorldRule(BaseModel):
 class WorldBible(BaseModel):
     title: str = Field(default="Untitled Masterwork", description="Book title")
     genre: str = Field(default="general", description="Primary genre")
+    language: str = Field(default="english", description="Manuscript language: 'english' or 'tamil'")
     setting_overview: str = Field(default="Immersive, high-stakes setting environment.", description="Setting description")
     time_period: str = Field(default="Contemporary / Modern Era", description="Temporal setting")
     core_thematic_conflict: str = Field(default="Transformation vs Legacy Resistance", description="Central conflict")

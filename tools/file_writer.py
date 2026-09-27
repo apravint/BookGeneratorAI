@@ -32,11 +32,13 @@ class FileWriterTool:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
 
-    def compile_docx(self, title: str, domain: str, author: str, docx_path: str):
+    def compile_docx(self, title: str, domain: str, author: str, docx_path: str, language: str = "english"):
         compile_book(
             title=title,
             domain=domain,
             author=author,
             chapters_dir=self.output_dir,
-            output_path=docx_path
+            output_path=docx_path,
+            language=language
         )
+

@@ -45,8 +45,10 @@ def main():
     )
     parser.add_argument("--title", "-t", required=True, help="Title of the book")
     parser.add_argument("--concept", "-c", default="", help="Seed concept or prompt for the book")
-    parser.add_argument("--genre", "-g", default="auto", help="Genre: fiction, romance, business, self-help, technical, non-fiction")
+    parser.add_argument("--genre", "-g", default="auto", help="Genre: fiction, romance, business, self-help, technical, non-fiction, tamil_historical, tamil_kavithai, tamil_thirukkural, tamil_fiction")
     parser.add_argument("--author", "-a", default="Pravin Tamilan", help="Author Name (default: 'Pravin Tamilan')")
+    parser.add_argument("--language", "-l", default="tamil", choices=["english", "tamil", "auto"], help="Target language: english, tamil, auto (default: 'tamil')")
+    parser.add_argument("--tamil", action="store_true", help="Shortcut preset flag to generate rich authentic Tamil content")
     parser.add_argument("--provider", "-p", default="ollama", choices=["ollama", "openai", "gemini", "anthropic"])
     parser.add_argument("--model", "-m", default="deepseek-r1:latest", help="Model name (e.g. deepseek-r1:latest, gpt-4o)")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama server URL")
@@ -57,6 +59,7 @@ def main():
     args = parser.parse_args()
 
     concept = args.concept or args.title
+    language = "tamil" if args.tamil else args.language
 
     if args.reset:
         reset_environment(db_path="memory/book_state.db", output_dir="output")
@@ -67,6 +70,7 @@ def main():
     print(f" Title:        {args.title}")
     print(f" Author:       {args.author}")
     print(f" Genre:        {args.genre.upper()}")
+    print(f" Language:     {language.upper()} (தமிழ்)")
     print(f" Provider:     {args.provider.upper()}")
     print(f" Ollama URL:   {args.ollama_url}")
     print(f" Model:        {args.model}")
@@ -88,19 +92,19 @@ def main():
     
     world_builder = WorldBuilderAgent(llm_client)
     print("  [Agent: World Builder] Generating structured World Bible...")
-    world_bible = world_builder.build_world(seed_title=args.title, seed_concept=concept, genre=args.genre)
+    world_bible = world_builder.build_world(seed_title=args.title, seed_concept=concept, genre=args.genre, language=language)
     state_mgr.save_world_bible(world_bible)
-    print(f"  ✓ World Bible Created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined).")
+    print(f"  ✓ World Bible Created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined, Language: {world_bible.language}).")
 
     char_architect = CharacterArchitectAgent(llm_client)
     print("  [Agent: Character Architect] Developing Character Registry & Voice Fingerprints...")
-    character_registry = char_architect.build_characters(world_bible, author_name=args.author)
+    character_registry = char_architect.build_characters(world_bible, author_name=args.author, language=language)
     state_mgr.save_character_registry(character_registry)
     print(f"  ✓ Character Registry Created: {len(character_registry.characters)} characters initialized.")
 
     outliner = MasterOutlinerAgent(llm_client)
     print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
-    master_outline = outliner.build_outline(world_bible, character_registry)
+    master_outline = outliner.build_outline(world_bible, character_registry, language=language)
     state_mgr.save_master_outline(master_outline)
     print(f"  ✓ Master Outline Created: {len(master_outline.chapters)} chapter beat sheets scaffolded.")
 
@@ -164,7 +168,7 @@ def main():
         print(f"  [Memory Engine] Updating Story So Far memory block for Chapter {chap_num}...")
         summary_prompt = f"Provide a concise 3-bullet narrative recap of Chapter {chap_num}: {chapter_beat.title}.\nText snippet:\n{final_chapter_text[:1500]}"
         try:
-            chap_summary = llm_client.generate_text(summary_prompt, system_prompt="You are a narrative continuity summarizer.")
+            chap_summary = llm_client.generate_text(summary_prompt, system_prompt="You are a narrative continuity summarizer. Write in " + ("Tamil" if language in ["tamil", "ta"] else "English") + ".")
         except Exception:
             chap_summary = f"- Chapter {chap_num} ({chapter_beat.title}): Key events unfolded as planned."
 
@@ -179,7 +183,8 @@ def main():
                 title=args.title,
                 domain=concept,
                 author=args.author,
-                docx_path=args.output
+                docx_path=args.output,
+                language=language
             )
             print(f"  ✓ [Disk Sync] Live document '{os.path.basename(args.output)}' updated.")
         except Exception as ex:
@@ -192,7 +197,8 @@ def main():
         title=args.title,
         domain=concept,
         author=args.author,
-        docx_path=args.output
+        docx_path=args.output,
+        language=language
     )
     print(f"🎉 SUCCESS: Multi-Agent Commercial Book successfully generated: {os.path.abspath(args.output)}")
     print("=" * 80 + "\n")
@@ -200,3 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

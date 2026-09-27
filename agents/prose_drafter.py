@@ -7,7 +7,7 @@ Prevents context token overflow and produces deep, multi-thousand word chapters 
 import re
 from schemas.models import WorldBible, CharacterRegistry, ChapterBeat, StoryState, RevisionBrief, SubBeat
 from generator.llm_client import LlmClient
-from prompts.system_prompts import PROSE_DRAFTER_PROMPT
+from prompts.system_prompts import PROSE_DRAFTER_PROMPT, TAMIL_PROSE_DRAFTER_PROMPT
 
 
 class ProseDrafterAgent:
@@ -22,6 +22,10 @@ class ProseDrafterAgent:
         story_state: StoryState,
         revision_brief: RevisionBrief = None
     ) -> str:
+        is_tamil = getattr(world_bible, 'language', 'english').lower() in ["tamil", "ta"]
+        system_prompt = TAMIL_PROSE_DRAFTER_PROMPT if is_tamil else PROSE_DRAFTER_PROMPT
+        lang_constraint = "CRITICAL MANDATE: WRITE ALL MANUSCRIPT PROSE 100% IN FLUENT, ELEGANT, GRAMMATICALLY CORRECT TAMIL SCRIPT (தமிழ் எழுத்துக்கள்). DO NOT USE ENGLISH WORDS." if is_tamil else "Write in English."
+
         # Construct Character Voices Context
         char_voices = "\n".join([
             f"- {c.name} ({c.role}): Tone={c.voice_fingerprint.tone}, Sentence Rhythm={c.voice_fingerprint.sentence_structure}, Taboo Words={c.voice_fingerprint.taboo_phrases}"
@@ -46,7 +50,8 @@ Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revis
         for idx, sub_beat in enumerate(chapter_beat.sub_beats, start=1):
             beat_label = f"{chapter_beat.chapter_number}.{idx}"
 
-            user_prompt = f"""**Role:** You are an elite, award-winning author specializing in the {world_bible.genre} genre. Your prose is immersive, realistic, and character-driven.
+            user_prompt = f"""**Role:** You are an elite, award-winning author specializing in {world_bible.genre} genre. Your prose is immersive, realistic, and character-driven.
+{lang_constraint}
 
 **Task:** Write Scene Beat {beat_label} (approx. 600-900 words) fulfilling the narrative beats provided below. Do NOT write conversational preambles or meta commentary; write only the specified manuscript prose.
 
@@ -73,12 +78,13 @@ Ending Transition Hook: {sub_beat.ending_hook}
 
 **Strict Execution Constraints:**
 1. **Show, Don't Tell:** Anchor the narrative in concrete sensory details and immediate character action. Do not summarize elapsed time or off-screen events unless explicitly instructed.
-2. **Banish AI Slop:** You are strictly forbidden from using generic LLM tropes, including but not limited to: "a tapestry of," "a testament to," "shivers down her spine," "a palpable tension," or "little did they know."
-3. **No Moralizing Conclusions:** End the scene precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
-4. **Dialogue Realism:** Characters must speak with distinct voices based on their profiles. Include interruptions, unspoken subtext, and physical actions (beats) between dialogue lines.
-5. **Section Heading:** Start the section with a clean markdown heading: `### {sub_beat.section_number} {sub_beat.scene_objective}`.
+2. **Language Integrity:** {lang_constraint}
+3. **Banish AI Slop:** You are strictly forbidden from using generic LLM tropes, including: "a tapestry of," "a testament to," "shivers down her spine," "ஒரு சான்றாக அமைந்தது", "முதுகெலும்பில் நடுக்கம்".
+4. **No Moralizing Conclusions:** End the scene precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
+5. **Dialogue Realism:** Characters must speak with distinct voices based on their profiles. Include interruptions, unspoken subtext, and physical actions (beats) between dialogue lines.
+6. **Section Heading:** Start the section with a clean markdown heading: `### {sub_beat.section_number} {sub_beat.scene_objective}`.
 """
-            scene_raw = self.llm.generate_text(user_prompt, system_prompt=PROSE_DRAFTER_PROMPT, max_tokens=2048)
+            scene_raw = self.llm.generate_text(user_prompt, system_prompt=system_prompt, max_tokens=2048)
             clean_scene = self._post_process_scene(scene_raw, sub_beat)
 
             words_count = len(clean_scene.split())
