@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BookGenerator AI (தமிழ்) - AI புத்தகம் உருவாக்கும் தளம்</title>
+  
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Mukta+Malar:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Top Header Navigation -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <i class="fa-solid fa-book-journal-whills"></i>
+        </div>
+        <div class="brand-text">
+          <h1>BookGenerator AI</h1>
+          <span class="badge-tamil">தமிழ் பதிப்பு</span>
+        </div>
+      </div>
+      
+      <div class="nav-actions">
+        <button id="btn-new-book" class="btn btn-secondary">
+          <i class="fa-solid fa-plus"></i> புதிய புத்தகம்
+        </button>
+        <a href="#presets" class="nav-link">வடிவமைப்புகள் (Presets)</a>
+        <a href="#my-books" class="nav-link">எனது புத்தகங்கள்</a>
+      </div>
+    </header>
+
+    <!-- Hero Banner & Quick Stats -->
+    <section class="hero-section">
+      <div class="hero-content">
+        <h2 class="hero-title">செயற்கை நுண்ணறிவு மூலம் <span class="text-gradient">300 பக்க காவிய புத்தகங்களை</span> உருவாக்குங்கள்</h2>
+        <p class="hero-subtitle">
+          தமிழ் வரலாற்று நாவல்கள், திருக்குறள் வாழ்வியல், கவிதைகள் மற்றும் தொழில் தந்திர புத்தகங்களை நொடிகளில் பப்ளிஷிங்-கிரேட் DOCX வடிவில் உருவாக்குங்கள்.
+        </p>
+      </div>
+      
+      <div class="hero-stats">
+        <div class="stat-card">
+          <i class="fa-solid fa-brain stat-icon"></i>
+          <div class="stat-info">
+            <span class="stat-value">5 Agents</span>
+            <span class="stat-label">Multi-Agent System</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <i class="fa-solid fa-feather-pointed stat-icon"></i>
+          <div class="stat-info">
+            <span class="stat-value">12 Chapters</span>
+            <span class="stat-label">Full Structure</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <i class="fa-solid fa-file-word stat-icon"></i>
+          <div class="stat-info">
+            <span class="stat-value">DOCX Export</span>
+            <span class="stat-label">Commercial Quality</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tamil Preset Quick Launcher Section -->
+    <section id="presets" class="section-container">
+      <div class="section-header">
+        <h3><i class="fa-solid fa-bolt text-gold"></i> தமிழ் பிரத்யேக வடிவமைப்புகள் (Quick Presets)</h3>
+        <p>ஒரே கிளிக்கில் பிரபலமான தமிழ் புத்தகப் பாணிகளைத் தேர்ந்தெடுங்கள்</p>
+      </div>
+
+      <div class="preset-grid">
+        <!-- Preset 1: Historical -->
+        <div class="preset-card" data-preset="historical">
+          <div class="preset-badge">வரலாறு</div>
+          <div class="preset-icon"><i class="fa-solid fa-crown"></i></div>
+          <h4>சோழர் வரலாற்று காவியம்</h4>
+          <p>அரசியல் சூழ்ச்சி, போர் உத்திகள், வீர மரபுகள் கொண்ட தமிழ் வரலாற்று நாவல்.</p>
+          <button class="btn btn-preset" onclick="applyPreset('historical')">தேர்ந்தெடு</button>
+        </div>
+
+        <!-- Preset 2: Thirukkural -->
+        <div class="preset-card" data-preset="thirukkural">
+          <div class="preset-badge">வாழ்வியல்</div>
+          <div class="preset-icon"><i class="fa-solid fa-scroll"></i></div>
+          <h4>திருக்குறள் மேலாண்மை & தலைமைத்துவம்</h4>
+          <p>நவீன தலைமைத்துவத்திற்கும் வாழ்க்க வெற்றிக்கும் திருக்குறள் காட்டும் வழிகாட்டி.</p>
+          <button class="btn btn-preset" onclick="applyPreset('thirukkural')">தேர்ந்தெடு</button>
+        </div>
+
+        <!-- Preset 3: Kavithai -->
+        <div class="preset-card" data-preset="kavithai">
+          <div class="preset-badge">கவிதை</div>
+          <div class="preset-icon"><i class="fa-solid fa-pen-nib"></i></div>
+          <h4>நவீன தமிழ்க் கவிதைத் தொகுப்பு</h4>
+          <p>காதல், இயற்கை, சமூக சிந்தனைகள் மற்றும் தத்துவக் கவிதைகளின் தொகுப்பு.</p>
+          <button class="btn btn-preset" onclick="applyPreset('kavithai')">தேர்ந்தெடு</button>
+        </div>
+
+        <!-- Preset 4: Fiction / General -->
+        <div class="preset-card" data-preset="fiction">
+          <div class="preset-badge">நாவல்</div>
+          <div class="preset-icon"><i class="fa-solid fa-book-open"></i></div>
+          <h4>நவீன தமிழ் சமூக நாவல்</h4>
+          <p>மனித உறவுகள், எதிர்பார்ப்புகள் மற்றும் வாழ்வியல் போராட்டங்களை விவரிக்கும் கதை.</p>
+          <button class="btn btn-preset" onclick="applyPreset('fiction')">தேர்ந்தெடு</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Generator Workspace Grid: Form + Live Manuscript Viewer -->
+    <main class="workspace-grid">
+      
+      <!-- Left Column: Generator Form -->
+      <section class="card form-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-wand-magic-sparkles text-accent"></i> புத்தகம் உருவாக்க படிவம்</h3>
+          <span class="status-pill status-ready" id="engine-status">தயார் (Ready)</span>
+        </div>
+
+        <form id="generator-form" onsubmit="handleGenerate(event)">
+          
+          <div class="form-group">
+            <label for="book-title"><i class="fa-solid fa-heading"></i> புத்தகத்தின் தலைப்பு (Title)</label>
+            <input type="text" id="book-title" placeholder="எ.கா: வேல்விழியின் சபதம்" required>
+          </div>
+
+          <div class="form-group">
+            <label for="book-concept"><i class="fa-solid fa-lightbulb"></i> மையக் கருத்து / கதைக்களம் (Concept Prompt)</label>
+            <textarea id="book-concept" rows="3" placeholder="புத்தகத்தின் கதைக்களம் அல்லது மையக் கருத்தை சுருக்கமாக எழுதுங்கள்..."></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="author-name"><i class="fa-solid fa-user-pen"></i> ஆசிரியர் பெயர் (Author)</label>
+              <input type="text" id="author-name" value="பிரவின் தமிழன்" required>
+            </div>
+
+            <div class="form-group flex-1">
+              <label for="book-language"><i class="fa-solid fa-language"></i> மொழி (Language)</label>
+              <select id="book-language">
+                <option value="tamil" selected>தமிழ் (Tamil)</option>
+                <option value="english">English</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="book-genre"><i class="fa-solid fa-layer-group"></i> வகை (Genre)</label>
+              <select id="book-genre">
+                <option value="tamil_historical">தமிழ் வரலாற்று காவியம்</option>
+                <option value="tamil_thirukkural">திருக்குறள் வாழ்வியல் & மேலாண்மை</option>
+                <option value="tamil_kavithai">தமிழ்க் கவிதைத் தொகுப்பு</option>
+                <option value="tamil_fiction">தமிழ் நவீன நாவல்</option>
+                <option value="fiction">General Fiction</option>
+                <option value="non-fiction">Non-Fiction / Self-Help</option>
+              </select>
+            </div>
+
+            <div class="form-group flex-1">
+              <label for="ai-provider"><i class="fa-solid fa-server"></i> AI Engine Provider</label>
+              <select id="ai-provider" onchange="toggleProviderSettings()">
+                <option value="ollama" selected>Local Ollama (Offline / Free)</option>
+                <option value="gemini">Google Gemini AI</option>
+                <option value="openai">OpenAI (GPT-4o)</option>
+                <option value="anthropic">Anthropic (Claude 3.5)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" id="model-name-group">
+            <label for="model-name"><i class="fa-solid fa-microchip"></i> AI Model</label>
+            <input type="text" id="model-name" value="deepseek-r1:latest" placeholder="e.g. deepseek-r1:latest, llama3:latest">
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="btn-generate" class="btn btn-primary btn-large">
+              <i class="fa-solid fa-paper-plane"></i> புத்தகம் உருவாக்கத் தொடங்கு (Start AI Generation)
+            </button>
+          </div>
+
+        </form>
+      </section>
+
+      <!-- Right Column: Live Pipeline Monitor & Manuscript Viewer -->
+      <section class="card viewer-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-book-open-reader text-gold"></i> நேரலை புத்தகம் மற்றும் ஏஜென்ட்கள் நிலவரம்</h3>
+          <div class="action-buttons">
+            <button id="btn-download-docx" class="btn btn-success btn-sm" disabled onclick="downloadDocx()">
+              <i class="fa-solid fa-download"></i> Download .DOCX
+            </button>
+          </div>
+        </div>
+
+        <!-- Agent Multi-Stage Pipeline Progress -->
+        <div class="pipeline-tracker" id="pipeline-tracker">
+          <div class="step-node" id="node-world">
+            <div class="node-icon"><i class="fa-solid fa-globe"></i></div>
+            <div class="node-text">
+              <span class="node-title">World Builder</span>
+              <span class="node-sub">உலக அமைப்பு</span>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+
+          <div class="step-node" id="node-char">
+            <div class="node-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="node-text">
+              <span class="node-title">Character Architect</span>
+              <span class="node-sub">கதாபாத்திரங்கள்</span>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+
+          <div class="step-node" id="node-outline">
+            <div class="node-icon"><i class="fa-solid fa-list-check"></i></div>
+            <div class="node-text">
+              <span class="node-title">Master Outliner</span>
+              <span class="node-sub">12 அத்தியாய திட்டமிடல்</span>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+
+          <div class="step-node" id="node-draft">
+            <div class="node-icon"><i class="fa-solid fa-pen-nib"></i></div>
+            <div class="node-text">
+              <span class="node-title">Prose Drafter & Critics</span>
+              <span class="node-sub">எழுதுதல் & சரிபார்த்தல்</span>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+
+          <div class="step-node" id="node-docx">
+            <div class="node-icon"><i class="fa-solid fa-file-word"></i></div>
+            <div class="node-text">
+              <span class="node-title">DOCX Compiler</span>
+              <span class="node-sub">வணிகப் பதிப்பு</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Generation Progress Bar -->
+        <div class="progress-box hidden" id="progress-box">
+          <div class="progress-info">
+            <span id="progress-message">ஏஜென்ட்கள் பணியைத் தொடங்குகின்றன...</span>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progress-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Manuscript Navigation Tabs -->
+        <div class="manuscript-tabs" id="chapter-tabs">
+          <button class="tab-btn active" onclick="switchChapter(0)">முகப்பு & பொருளடக்கம்</button>
+        </div>
+
+        <!-- Live Content Body Reader -->
+        <div class="manuscript-body" id="manuscript-content">
+          <div class="empty-state">
+            <i class="fa-solid fa-book-bookmark empty-icon"></i>
+            <h4>புத்தகம் இன்னும் உருவாக்கப்படவில்லை</h4>
+            <p>இடதுபுற படிவத்தில் விவரங்களைப் பூர்த்தி செய்து 'புத்தகம் உருவாக்கத் தொடங்கு' பொத்தானைக் கிளிக் செய்யவும்.</p>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>BookGenerator AI v4.0 • 100% Tamil Language Support (தமிழ் மொழி) • Powered by Multi-Agent AI Architecture</p>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
