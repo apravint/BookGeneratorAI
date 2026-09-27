@@ -265,9 +265,45 @@ def run_generation_task(job_id, params):
 
 
 
+def scan_existing_output_books():
+    """Scans output/ directory for existing .docx manuscripts and populates JOBS."""
+    global JOBS, JOB_COUNTER
+    docx_files = glob.glob(os.path.join(OUTPUT_DIR, "*.docx"))
+    md_files = glob.glob(os.path.join(OUTPUT_DIR, "chapter_*.md"))
+    
+    if not docx_files and not md_files:
+        return
+
+    for idx, fpath in enumerate(sorted(docx_files, key=os.path.getmtime), start=1):
+        filename = os.path.basename(fpath)
+        title = filename.replace(".docx", "").replace("_", " ")
+        job_id = f"existing_{idx}"
+        
+        JOBS[job_id] = {
+            "job_id": job_id,
+            "title": title,
+            "author": "பிரவின் தமிழன்",
+            "genre": "தமிழ் இலக்கியம்",
+            "language": "tamil",
+            "provider": "OLLAMA / GEMINI",
+            "status": "completed",
+            "phase": "completed",
+            "progress_percent": 100,
+            "message": f"ஏற்கனவே உருவாக்கப்பட்ட புத்தகம்: '{title}'",
+            "active_title": title,
+            "docx_path": fpath,
+            "error": "",
+            "chapters": [os.path.basename(m) for m in md_files]
+        }
+        JOB_COUNTER = max(JOB_COUNTER, idx)
+
+    print(f"  ✓ [Disk Scanner] Found {len(JOBS)} existing book manuscript(s) in output/ directory.")
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(WEB_DIR, exist_ok=True)
+    scan_existing_output_books()
 
     server = HTTPServer(("0.0.0.0", PORT), BookGeneratorHandler)
     print("=" * 80)
@@ -284,5 +320,7 @@ def main():
         print("\nShutting down BookGenerator AI web server...")
         server.server_close()
 
+
 if __name__ == "__main__":
     main()
+
