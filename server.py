@@ -18,21 +18,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
-# Global Job State
-JOB_STATE = {
-    "status": "idle",       # idle, running, completed, failed
-    "phase": "world",       # world, char, outline, draft, docx, completed
-    "progress_percent": 0,
-    "message": "Ready to generate books.",
-    "active_title": "",
-    "docx_path": "",
-    "error": "",
-    "chapters": []
-}
+## Global Jobs Storage
+JOBS = {}
+JOB_COUNTER = 0
+JOB_LOCK = threading.Lock()
 
 class BookGeneratorHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
-        # Serve files from web/ directory if path starts with static file
         parsed_url = urllib.parse.urlparse(path)
         clean_path = parsed_url.path
         
@@ -45,9 +37,23 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        query_params = urllib.parse.parse_qs(parsed.query)
 
-        if path == "/api/status":
-            self.send_json_response(JOB_STATE)
+        if path in ["/api/status", "/api/jobs"]:
+            jobs_list = list(JOBS.values())
+            running_jobs = [j for j in jobs_list if j.get("status") == "running"]
+            latest_job = jobs_list[-1] if jobs_list else {
+                "status": "idle", "phase": "world", "progress_percent": 0,
+                "message": "Ready to generate books.", "active_title": "", "docx_path": "", "chapters": []
+            }
+            response_data = {
+                "active_job": latest_job,
+                "running_count": len(running_jobs),
+                "total_jobs": len(jobs_list),
+                "jobs": jobs_list
+            }
+            response_data.update(latest_job)
+            self.send_json_response(response_data)
             return
 
         elif path.startswith("/api/chapters/"):
@@ -67,7 +73,10 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
             return
 
         elif path == "/api/download":
-            docx_file = JOB_STATE.get("docx_path") or os.path.join(OUTPUT_DIR, "Generated_Book.docx")
+            job_id = query_params.get("job_id", [None])[0]
+            target_job = JOBS.get(job_id) if job_id else (list(JOBS.values())[-1] if JOBS else None)
+            
+            docx_file = target_job.get("docx_path") if target_job else os.path.join(OUTPUT_DIR, "Generated_Book.docx")
             if not os.path.exists(docx_file):
                 docx_files = glob.glob(os.path.join(OUTPUT_DIR, "*.docx"))
                 if docx_files:
@@ -89,6 +98,7 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        global JOB_COUNTER
         if self.path == "/api/generate":
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length).decode("utf-8")
@@ -99,15 +109,16 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({"error": "Invalid JSON body"}, status=400)
                 return
 
-            if JOB_STATE["status"] == "running":
-                self.send_json_response({"error": "A book generation task is already in progress."}, status=400)
-                return
+            with JOB_LOCK:
+                JOB_COUNTER += 1
+                job_id = f"job_{JOB_COUNTER}"
+                data["job_id"] = job_id
 
-            # Launch generation thread
-            t = threading.Thread(target=run_generation_task, args=(data,), daemon=True)
+            # Launch concurrent generation thread
+            t = threading.Thread(target=run_generation_task, args=(job_id, data), daemon=True)
             t.start()
 
-            self.send_json_response({"status": "started", "job_id": "job_1"})
+            self.send_json_response({"status": "started", "job_id": job_id, "message": f"Book generation job '{job_id}' launched successfully."})
             return
 
         self.send_json_response({"error": "Endpoint not found"}, status=404)
@@ -120,8 +131,8 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
 
-def run_generation_task(params):
-    global JOB_STATE
+def run_generation_task(job_id, params):
+    global JOBS
     title = params.get("title", "தமிழ் காவியம்")
     concept = params.get("concept", title)
     author = params.get("author", "பிரவின் தமிழன்")
@@ -146,11 +157,16 @@ def run_generation_task(params):
             env_vars["TYPESAFE_API_KEY"] = api_key
         env_vars["LLM_API_KEY"] = api_key
 
-    output_filename = f"{title.replace(' ', '_')}.docx"
+    output_filename = f"{title.replace(' ', '_')}_{job_id}.docx"
     output_docx_path = os.path.join(OUTPUT_DIR, output_filename)
 
-
-    JOB_STATE.update({
+    job_record = {
+        "job_id": job_id,
+        "title": title,
+        "author": author,
+        "genre": genre,
+        "language": language,
+        "provider": provider,
         "status": "running",
         "phase": "world",
         "progress_percent": 10,
@@ -159,7 +175,9 @@ def run_generation_task(params):
         "docx_path": output_docx_path,
         "error": "",
         "chapters": []
-    })
+    }
+    JOBS[job_id] = job_record
+
 
     cmd = [
         sys.executable, "main.py",
@@ -175,8 +193,7 @@ def run_generation_task(params):
         "--reset"
     ]
 
-
-    print(f"\n[Web Server] Launching Book Generator process: {' '.join(cmd)}")
+    print(f"\n[Web Server] Launching Book Generator process for '{title}' (Job: {job_id}): {' '.join(cmd)}")
 
     try:
         proc = subprocess.Popen(
@@ -189,64 +206,63 @@ def run_generation_task(params):
             bufsize=1
         )
 
-
         for line in iter(proc.stdout.readline, ""):
             line_str = line.strip()
-            print(f"  [AI Engine] {line_str}")
+            print(f"  [AI Engine - {job_id}] {line_str}")
 
             if "Agent: World Builder" in line_str:
-                JOB_STATE["phase"] = "world"
-                JOB_STATE["progress_percent"] = 15
-                JOB_STATE["message"] = "World Builder Agent: Creating setting and cultural rules..."
+                job_record["phase"] = "world"
+                job_record["progress_percent"] = 15
+                job_record["message"] = "World Builder Agent: Creating setting and cultural rules..."
             elif "Agent: Character Architect" in line_str:
-                JOB_STATE["phase"] = "char"
-                JOB_STATE["progress_percent"] = 25
-                JOB_STATE["message"] = "Character Architect Agent: Building voice fingerprints & profiles..."
+                job_record["phase"] = "char"
+                job_record["progress_percent"] = 25
+                job_record["message"] = "Character Architect Agent: Building voice fingerprints & profiles..."
             elif "Agent: Master Outliner" in line_str:
-                JOB_STATE["phase"] = "outline"
-                JOB_STATE["progress_percent"] = 35
-                JOB_STATE["message"] = "Master Outliner Agent: Scaffolding 12-chapter beat sheet..."
+                job_record["phase"] = "outline"
+                job_record["progress_percent"] = 35
+                job_record["message"] = "Master Outliner Agent: Scaffolding 12-chapter beat sheet..."
             elif "CHAPTER" in line_str and "CHAPTER 12/" not in line_str:
-                JOB_STATE["phase"] = "draft"
-                # Estimate chapter progress
+                job_record["phase"] = "draft"
                 try:
                     num = int(line_str.split("CHAPTER")[1].split("/")[0].strip())
-                    JOB_STATE["progress_percent"] = 35 + int((num / 12) * 55)
-                    JOB_STATE["message"] = f"Prose Drafter & Adversarial Critics: Drafting Chapter {num}/12..."
+                    job_record["progress_percent"] = 35 + int((num / 12) * 55)
+                    job_record["message"] = f"Prose Drafter & Adversarial Critics: Drafting Chapter {num}/12..."
                     
                     chap_file = f"chapter_{num:02d}.md"
-                    if chap_file not in JOB_STATE["chapters"]:
-                        JOB_STATE["chapters"].append(chap_file)
+                    if chap_file not in job_record["chapters"]:
+                        job_record["chapters"].append(chap_file)
                 except Exception:
                     pass
             elif "Compiling" in line_str or "Finalizing Commercial" in line_str:
-                JOB_STATE["phase"] = "docx"
-                JOB_STATE["progress_percent"] = 95
-                JOB_STATE["message"] = "DOCX Compiler: Packaging 300-page bestseller document..."
+                job_record["phase"] = "docx"
+                job_record["progress_percent"] = 95
+                job_record["message"] = "DOCX Compiler: Packaging 300-page bestseller document..."
 
         proc.wait()
 
         if proc.returncode == 0:
-            JOB_STATE.update({
+            job_record.update({
                 "status": "completed",
                 "phase": "completed",
                 "progress_percent": 100,
                 "message": f"Successfully generated '{title}' commercial DOCX manuscript!"
             })
         else:
-            JOB_STATE.update({
+            job_record.update({
                 "status": "failed",
                 "message": "Engine run returned non-zero exit code.",
                 "error": "Pipeline execution stopped unexpectedly."
             })
 
     except Exception as ex:
-        print(f"[Web Server Error] {ex}")
-        JOB_STATE.update({
+        print(f"[Web Server Error - {job_id}] {ex}")
+        job_record.update({
             "status": "failed",
             "message": f"Execution error: {ex}",
             "error": str(ex)
         })
+
 
 
 def main():

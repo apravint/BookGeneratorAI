@@ -2,7 +2,6 @@
 let currentJobId = null;
 let pollTimer = null;
 let activeChapterNum = 0;
-let generatedChapters = {};
 
 const PRESETS = {
   historical: {
@@ -62,6 +61,8 @@ function toggleProviderSettings() {
     modelInput.value = "gpt-4o";
   } else if (provider === "anthropic") {
     modelInput.value = "claude-3-5-sonnet-20240620";
+  } else if (provider === "jev") {
+    modelInput.value = "jev-system1";
   }
 }
 
@@ -103,8 +104,6 @@ async function handleGenerate(e) {
       body: JSON.stringify({ title, concept, author, language, genre, provider, model, api_key: apiKey, ollama_url: ollamaUrl })
     });
 
-
-
     const data = await res.json();
     if (data.status === "started" || data.status === "ok") {
       currentJobId = data.job_id || "active";
@@ -136,21 +135,24 @@ async function checkStatus() {
     const res = await fetch("/api/status");
     const data = await res.json();
 
-    updatePipelineUI(data);
+    if (data.jobs && data.jobs.length > 0) {
+      renderJobsDashboard(data.jobs);
+    }
 
-    if (data.status === "running") {
+    const activeData = data.active_job || data;
+    updatePipelineUI(activeData);
+
+    if (activeData.status === "running") {
       document.getElementById("progress-box").classList.remove("hidden");
       document.getElementById("engine-status").className = "status-pill status-running";
-      document.getElementById("engine-status").textContent = "இயங்குகிறது (Generating...)";
+      document.getElementById("engine-status").textContent = `இயங்குகிறது (${data.running_count || 1} புத்தகங்கள்)`;
     }
 
-    if (data.chapters && data.chapters.length > 0) {
-      updateChapterTabs(data.chapters);
+    if (activeData.chapters && activeData.chapters.length > 0) {
+      updateChapterTabs(activeData.chapters);
     }
 
-
-    if (data.status === "completed") {
-      clearInterval(pollTimer);
+    if (activeData.status === "completed") {
       document.getElementById("engine-status").className = "status-pill status-ready";
       document.getElementById("engine-status").textContent = "நிறைவடைந்தது (Completed)";
       document.getElementById("progress-message").textContent = "🎉 புத்தகம் வெற்றிகரமாக உருவாக்கப்பட்டுவிட்டது!";
@@ -158,16 +160,52 @@ async function checkStatus() {
       document.getElementById("progress-percent").textContent = "100%";
       document.getElementById("btn-download-docx").disabled = false;
       resetFormBtn();
-    } else if (data.status === "failed") {
-      clearInterval(pollTimer);
-      document.getElementById("engine-status").className = "status-pill";
-      document.getElementById("engine-status").textContent = "தோல்வி (Failed)";
-      document.getElementById("progress-message").textContent = "⚠️ பிழை: " + (data.error || "உருவாக்கம் தடைபட்டது.");
-      resetFormBtn();
     }
   } catch (err) {
     console.error("Polling status error:", err);
   }
+}
+
+function renderJobsDashboard(jobs) {
+  const container = document.getElementById("jobs-grid");
+  if (!container) return;
+
+  if (!jobs || jobs.length === 0) {
+    container.innerHTML = `
+      <div class="empty-jobs-card">
+        <i class="fa-solid fa-layer-group text-muted font-xl"></i>
+        <p>இன்னும் புத்தகங்கள் உருவாக்கப்படவில்லை. புதிய புத்தகத்தைத் தொடங்குங்கள்!</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = jobs.map(j => `
+    <div class="job-card ${j.status}">
+      <div class="job-header">
+        <div>
+          <div class="job-title">${j.title || 'தமிழ் புத்தகம்'}</div>
+          <div class="job-meta">ஆசிரியர்: ${j.author || 'பிரவின்'} • ${j.genre || 'வரலாறு'} • Provider: ${(j.provider || 'ollama').toUpperCase()}</div>
+        </div>
+        <span class="status-pill ${j.status === 'completed' ? 'status-ready' : (j.status === 'running' ? 'status-running' : '')}">
+          ${j.status === 'completed' ? 'நிறைவடைந்தது' : (j.status === 'running' ? 'இயங்குகிறது' : j.status)}
+        </span>
+      </div>
+
+      <div class="progress-info">
+        <span style="font-size: 11px; color: var(--text-muted);">${j.message || ''}</span>
+        <span style="font-size: 11px;">${j.progress_percent || 0}%</span>
+      </div>
+
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width: ${j.progress_percent || 0}%;"></div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+        <span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-file-lines"></i> ${j.chapters ? j.chapters.length : 0} அத்தியாயங்கள்</span>
+        ${j.status === 'completed' ? `<a href="/api/download?job_id=${j.job_id}" class="btn btn-success btn-sm"><i class="fa-solid fa-download"></i> DOCX பதிவிறக்கு</a>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
 function updatePipelineUI(data) {
@@ -186,7 +224,6 @@ function updatePipelineUI(data) {
     docx: document.getElementById("node-docx")
   };
 
-  // Reset classes
   Object.values(nodes).forEach(n => {
     if (n) n.className = "step-node";
   });
@@ -235,7 +272,6 @@ function updateChapterTabs(chapters) {
 async function switchChapter(num) {
   activeChapterNum = num;
   
-  // Highlight tab
   document.querySelectorAll(".tab-btn").forEach((t, i) => {
     if (i + 1 === num) t.classList.add("active");
     else t.classList.remove("active");
@@ -271,7 +307,7 @@ function renderMarkdown(md) {
 }
 
 function downloadDocx() {
-  window.location.href = "/api/download";
+  window.location.href = `/api/download?job_id=${currentJobId || ''}`;
 }
 
 function resetFormBtn() {
