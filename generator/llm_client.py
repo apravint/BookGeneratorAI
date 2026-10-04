@@ -20,7 +20,20 @@ class LlmClient:
         ollama_url: str = "http://localhost:11434"
     ):
         self.provider = provider.lower()
-        self.api_key = api_key or os.getenv("JEV_API_KEY") or os.getenv("TYPESAFE_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if api_key:
+            self.api_key = api_key
+        else:
+            if self.provider == "openai":
+                self.api_key = os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY")
+            elif self.provider == "gemini":
+                self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("LLM_API_KEY")
+            elif self.provider == "anthropic":
+                self.api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("LLM_API_KEY")
+            elif self.provider in ["jev", "typesafe"]:
+                self.api_key = os.getenv("JEV_API_KEY") or os.getenv("TYPESAFE_API_KEY") or os.getenv("LLM_API_KEY")
+            else:
+                self.api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+
         self.ollama_url = (ollama_url or "http://localhost:11434").rstrip("/")
         
         if self.provider == "ollama":
@@ -106,7 +119,7 @@ class LlmClient:
             "options": {
                 "temperature": 0.7,
                 "num_predict": max_tokens,
-                "num_ctx": 4096  # Optimized context size for fast local CPU inference
+                "num_ctx": 16384  # Full context window per AGENTS.md mandate
             }
         }
 
@@ -207,3 +220,7 @@ class LlmClient:
             filtered_lines.append(line)
 
         return "\n".join(filtered_lines).strip()
+
+
+# Backward compatibility alias
+LLMClient = LlmClient

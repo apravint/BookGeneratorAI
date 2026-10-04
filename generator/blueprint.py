@@ -633,3 +633,39 @@ class BookBlueprint:
                 ]
             }
         ]
+
+
+# Genre metadata registries & helpers for Web and Streamlit UIs
+TAMIL_GENRES = {
+    "tamil_historical": {
+        "name": "வரலாற்றுப் புதினம் (Historical Fiction)",
+        "description": "சோழ, பாண்டிய, சேர சாம்ராஜ்யங்களின் அரசியல் சூழ்ச்சிகள், கடற்படைப் போர்கள் மற்றும் வீர காவியங்கள்."
+    },
+    "tamil_kavithai": {
+        "name": "கவிதைத் தொகுப்பு (Poetry Anthology)",
+        "description": "இயற்கை, காதல், வாழ்வியல் தத்துவம் மற்றும் சமூக சீர்திருத்தம் பாடும் நவீன கவிதைகள்."
+    },
+    "tamil_thirukkural": {
+        "name": "திருக்குறள் வாழ்வியல் & மேலாண்மை (Thirukkural Guide)",
+        "description": "அறத்துப்பால், பொருட்பால் வழியிலான அறநெறி, அரசியல் தந்திரம் மற்றும் தலைமைத்துவ வழிகாட்டி."
+    },
+    "tamil_fiction": {
+        "name": "நவீன தமிழ் நாவல் (Modern Fiction)",
+        "description": "மனித உணர்வுகள், சமூகப் போராட்டங்கள் மற்றும் மர்மங்கள் நிறைந்த நவீன தமிழ் புதினம்."
+    }
+}
+
+BLUEPRINTS = {
+    "fiction": "Fiction (Sci-Fi, Fantasy, Mystery, Thriller)",
+    "business": "Business (Leadership, Strategy, Finance, Unicorn Scaling)",
+    "self-help": "Self-Help (Productivity, Mindset, Habit Design)",
+    "technical": "Technical (Software Engineering, System Design, AI-Native)",
+    "non-fiction": "Non-Fiction (History, Science, Philosophy, Biography)",
+    **{k: v["name"] for k, v in TAMIL_GENRES.items()}
+}
+
+
+def get_blueprint_for_genre(genre: str, title: str = "Blueprint") -> BookBlueprint:
+    """Helper factory to retrieve a BookBlueprint instance for a genre."""
+    return BookBlueprint(title=title, genre=genre)
+

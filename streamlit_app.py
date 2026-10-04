@@ -14,14 +14,15 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from generator.blueprint import BLUEPRINTS, get_blueprint_for_genre, TAMIL_GENRES
-from generator.llm_client import LLMClient
-from generator.docx_compiler import compile_book_to_docx
+from generator.llm_client import LlmClient, LLMClient
+from generator.docx_compiler import compile_book, compile_book_to_docx
+from tools.file_writer import FileWriterTool
+from schemas.models import StoryState
 from agents.world_builder import WorldBuilderAgent
 from agents.character_architect import CharacterArchitectAgent
 from agents.master_outliner import MasterOutlinerAgent
 from agents.prose_drafter import ProseDrafterAgent
-from agents.slop_editor import AntiSlopEditorAgent
-from agents.adversarial_reviewer import MasterAdversarialReviewer
+from agents.critics import MasterAdversarialReviewer, AntiSlopEditorAgent
 
 # Page Configuration
 st.set_page_config(
@@ -169,87 +170,104 @@ def main():
 
         try:
             # Initialize Client
-            llm_client = LLMClient(
+            llm_client = LlmClient(
                 provider=provider,
-                api_key=api_key,
+                api_key=api_key if api_key else None,
                 model=model_name,
                 ollama_url=ollama_url
             )
 
-            blueprint = get_blueprint_for_genre(genre)
-
             # Step 1: World Building
-            status_text.info("🌐 Step 1/5: World Builder Agent constructing world bible...")
+            status_text.info("🌐 Step 1/5: World Builder Agent constructing World Bible...")
             progress_bar.progress(15)
             log_container.write("► Launching World Builder Agent...")
             world_agent = WorldBuilderAgent(llm_client)
-            world_bible = world_agent.generate(concept, blueprint, language=language)
-            log_container.success("✓ World Bible created successfully.")
+            world_bible = world_agent.build_world(seed_title=title, seed_concept=concept, genre=genre, language=language)
+            log_container.success(f"✓ World Bible created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined).")
 
             # Step 2: Character Architecture
             status_text.info("👤 Step 2/5: Character Architect Agent crafting profiles...")
             progress_bar.progress(35)
             log_container.write("► Launching Character Architect Agent...")
             char_agent = CharacterArchitectAgent(llm_client)
-            characters = char_agent.generate(concept, world_bible, blueprint, language=language)
-            log_container.success(f"✓ Character Profiles generated ({len(characters)} main characters).")
+            character_registry = char_agent.build_characters(world_bible, author_name=author, language=language)
+            log_container.success(f"✓ Character Profiles generated ({len(character_registry.characters)} characters initialized).")
 
             # Step 3: Master Outlining
             status_text.info("📜 Step 3/5: Master Outliner generating chapter beats...")
             progress_bar.progress(50)
             log_container.write(f"► Launching Master Outliner Agent for {num_chapters} chapters...")
             outliner = MasterOutlinerAgent(llm_client)
-            outline = outliner.generate(concept, world_bible, characters, blueprint, num_chapters=num_chapters, language=language)
-            log_container.success("✓ Master Outline completed.")
+            master_outline = outliner.build_outline(world_bible, character_registry, language=language)
+            target_chapters = master_outline.chapters[:num_chapters]
+            log_container.success(f"✓ Master Outline scaffolded: {len(target_chapters)} chapters ready.")
 
-            # Step 4: Prose Drafting & Anti-Slop Editing
-            status_text.info("✍️ Step 4/5: Drafting & Editing Chapters...")
+            # Step 4: Prose Drafting & Adversarial Revision Loop
+            status_text.info("✍️ Step 4/5: Drafting & Reviewing Chapters...")
             drafter = ProseDrafterAgent(llm_client)
-            editor = AntiSlopEditorAgent(llm_client)
             reviewer = MasterAdversarialReviewer(llm_client)
+            story_state = StoryState()
+            file_writer = FileWriterTool(output_dir=str(output_dir))
+            file_writer.ensure_front_matter(title=title, domain=concept, author=author, language=language)
 
             completed_chapters = []
-            total = len(outline)
+            total = len(target_chapters)
 
-            for idx, item in enumerate(outline, 1):
-                c_title = item.get("chapter_title", f"Chapter {idx}")
-                c_summary = item.get("summary", "")
-                c_beats = item.get("beats", [])
+            for idx, chapter_beat in enumerate(target_chapters, 1):
+                c_num = chapter_beat.chapter_number
+                c_title = chapter_beat.title
 
-                status_text.info(f"✍️ Drafting Chapter {idx}/{total}: {c_title}...")
-                log_container.write(f"► Drafting Chapter {idx}: {c_title}...")
+                status_text.info(f"✍️ Drafting Chapter {c_num}/{total}: {c_title}...")
+                log_container.write(f"► Drafting Chapter {c_num}: {c_title}...")
 
-                raw_prose = drafter.draft_chapter(
-                    chapter_number=idx,
-                    chapter_title=c_title,
-                    summary=c_summary,
-                    beats=c_beats,
+                draft_text = drafter.draft_chapter(
+                    chapter_beat=chapter_beat,
                     world_bible=world_bible,
-                    characters=characters,
-                    language=language
+                    registry=character_registry,
+                    story_state=story_state,
+                    revision_brief=None
                 )
 
-                log_container.write(f"► Running Anti-Slop Editor on Chapter {idx}...")
-                edited_prose = editor.edit_chapter(raw_prose, language=language)
+                log_container.write(f"► Adversarial Critics auditing Chapter {c_num}...")
+                revision_brief = reviewer.evaluate_chapter(
+                    chapter_beat=chapter_beat,
+                    chapter_text=draft_text,
+                    world_bible=world_bible,
+                    registry=character_registry,
+                    story_state=story_state
+                )
 
-                log_container.write(f"► Master Reviewer auditing Chapter {idx}...")
-                review_result = reviewer.review_chapter(edited_prose, language=language)
+                if revision_brief.passed_audit:
+                    log_container.success(f"✓ Chapter {c_num} passed adversarial audit clean!")
+                else:
+                    log_container.warning(f"⚠️ Chapter {c_num}: Found {len(revision_brief.continuity_issues)} continuity issue(s) & {len(revision_brief.slop_violations)} slop violation(s).")
+
+                # Persist chapter markdown
+                file_writer.write_markdown_chapter(c_num, draft_text)
+
+                # Update rolling story state
+                summary_prompt = f"Provide a concise 3-bullet narrative recap of Chapter {c_num}: {c_title}.\nText snippet:\n{draft_text[:1500]}"
+                try:
+                    chap_summary = llm_client.generate_text(summary_prompt, system_prompt="You are a narrative continuity summarizer. Write in " + ("Tamil" if language in ["tamil", "ta"] else "English") + ".")
+                except Exception:
+                    chap_summary = f"- Chapter {c_num} ({c_title}): Key events unfolded as planned."
+
+                story_state.story_so_far_summary += f"\n- Chapter {c_num} ({c_title}): {chap_summary.strip()}"
+                story_state.current_chapter = c_num
 
                 completed_chapters.append({
-                    "chapter_number": idx,
+                    "chapter_number": c_num,
                     "title": c_title,
-                    "content": edited_prose,
-                    "score": review_result.get("score", 9.0) if isinstance(review_result, dict) else 9.0
+                    "content": draft_text,
+                    "score": 9.5 if revision_brief.passed_audit else 8.5
                 })
 
-                prog_pct = 50 + int((idx / total) * 40)
+                prog_pct = 50 + int((idx / total) * 45)
                 progress_bar.progress(prog_pct)
-                log_container.success(f"✓ Chapter {idx} finalized.")
+                log_container.success(f"✓ Chapter {c_num} finalized.")
 
             # Step 5: Compilation
             status_text.info("📄 Step 5/5: Compiling Publishing-Grade DOCX...")
-            progress_bar.progress(95)
-
             book_dict = {
                 "metadata": {
                     "title": title,
@@ -260,7 +278,13 @@ def main():
                 "chapters": completed_chapters
             }
 
-            compile_book_to_docx(book_dict, str(docx_filename), language=language)
+            file_writer.compile_docx(
+                title=title,
+                domain=concept,
+                author=author,
+                docx_path=str(docx_filename),
+                language=language
+            )
             progress_bar.progress(100)
             status_text.success("🎉 Book Generation Complete!")
 

@@ -87,6 +87,12 @@ def main():
     )
     state_mgr = StateManager(db_path="memory/book_state.db")
     file_writer = FileWriterTool(output_dir="output")
+    file_writer.ensure_front_matter(
+        title=args.title,
+        domain=concept,
+        author=args.author,
+        language=language
+    )
 
     # 2. PHASE 1: Foundation (Architect Agents)
     print("PHASE 1: Foundation Setup (Architect Agents)...")

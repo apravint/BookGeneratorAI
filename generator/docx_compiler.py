@@ -161,10 +161,12 @@ def parse_markdown_file(doc, filepath, language="english"):
     table_rows = []
     font_name = get_font_name(is_heading=False, language=language)
 
+    is_first_heading = True
     for line in lines:
         stripped = line.strip()
 
         if stripped.startswith('```'):
+            is_first_heading = False
             if in_code_block:
                 add_code_block(doc, '\n'.join(code_lines))
                 code_lines = []
@@ -175,14 +177,17 @@ def parse_markdown_file(doc, filepath, language="english"):
             continue
 
         if in_code_block:
+            is_first_heading = False
             code_lines.append(line)
             continue
 
         if stripped.startswith('> '):
+            is_first_heading = False
             add_quote_callout(doc, stripped[2:])
             continue
 
         if '|' in line and line.count('|') >= 2:
+            is_first_heading = False
             if not in_table:
                 in_table = True
                 table_rows = []
@@ -200,7 +205,9 @@ def parse_markdown_file(doc, filepath, language="english"):
             continue
 
         if stripped.startswith('# '):
-            doc.add_page_break()
+            if not is_first_heading:
+                doc.add_page_break()
+            is_first_heading = False
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(40)
             p.paragraph_format.space_after = Pt(16)
@@ -211,7 +218,9 @@ def parse_markdown_file(doc, filepath, language="english"):
             run.bold = True
             run.font.color.rgb = COLOR_NAVY
         elif stripped.startswith('## '):
-            doc.add_page_break()
+            if not is_first_heading:
+                doc.add_page_break()
+            is_first_heading = False
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(30)
             p.paragraph_format.space_after = Pt(12)
@@ -222,6 +231,7 @@ def parse_markdown_file(doc, filepath, language="english"):
             run.bold = True
             run.font.color.rgb = COLOR_BLUE
         elif stripped.startswith('### '):
+            is_first_heading = False
             heading_text = stripped[4:]
             heading_text = re.sub(r'^Sub-section \d+:\s*', '', heading_text, flags=re.IGNORECASE)
             heading_text = re.sub(r'in The [^\n]*$', '', heading_text, flags=re.IGNORECASE).strip()
@@ -711,3 +721,51 @@ def compile_book(title: str, domain: str, author: str, chapters_dir: str, output
 
     doc.save(output_path)
     print(f"\nSuccessfully compiled manuscript to: {output_path}")
+
+
+def compile_book_to_docx(book_data, output_path: str, language: str = "english"):
+    """
+    Compatibility wrapper to compile a book dictionary or file directory to DOCX.
+    Supports book_data as a dictionary of chapters or as a directory path containing markdown files.
+    """
+    if isinstance(book_data, dict):
+        metadata = book_data.get("metadata", {})
+        title = metadata.get("title", "Untitled Book")
+        author = metadata.get("author", "Author")
+        chapters = book_data.get("chapters", [])
+        lang = metadata.get("language", language)
+
+        import tempfile
+        import shutil
+        temp_dir = tempfile.mkdtemp()
+        try:
+            for idx, ch in enumerate(chapters, 1):
+                c_num = ch.get("chapter_number", idx)
+                c_title = ch.get("title", f"Chapter {c_num}")
+                c_content = ch.get("content", "")
+                md_path = os.path.join(temp_dir, f"chapter_{c_num:02d}.md")
+                with open(md_path, "w", encoding="utf-8") as f:
+                    f.write(c_content if c_content.startswith("#") else f"## Chapter {c_num}: {c_title}\n\n{c_content}")
+
+            compile_book(
+                title=title,
+                domain=metadata.get("genre", title),
+                author=author,
+                chapters_dir=temp_dir,
+                output_path=output_path,
+                language=lang
+            )
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    elif isinstance(book_data, str) and os.path.isdir(book_data):
+        compile_book(
+            title="Book",
+            domain="General",
+            author="Author",
+            chapters_dir=book_data,
+            output_path=output_path,
+            language=language
+        )
+    else:
+        raise ValueError(f"Unsupported book_data format: {type(book_data)}")
+

@@ -15,8 +15,8 @@ class CharacterArchitectAgent:
     def __init__(self, llm_client: LlmClient):
         self.llm = llm_client
 
-    def build_characters(self, world_bible: WorldBible, author_name: str) -> CharacterRegistry:
-        is_tamil = getattr(world_bible, 'language', 'english').lower() in ["tamil", "ta"]
+    def build_characters(self, world_bible: WorldBible, author_name: str, language: str = "english") -> CharacterRegistry:
+        is_tamil = (language or getattr(world_bible, 'language', 'english')).lower() in ["tamil", "ta"]
         system_prompt = TAMIL_CHARACTER_ARCHITECT_PROMPT if is_tamil else CHARACTER_ARCHITECT_PROMPT
         lang_directive = "Generate authentic Tamil character names (e.g. அருள்மொழி, மாறன், வந்தியதேவன், கயல்விழி, அமுதா) and write all motivations, flaw, backstory, and voice in TAMIL (தமிழ் எழுத்துக்கள்)." if is_tamil else "Write in English."
 
