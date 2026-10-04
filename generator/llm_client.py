@@ -40,11 +40,11 @@ class LlmClient:
         self.ollama_url = (ollama_url or "http://localhost:11434").rstrip("/")
         
         if self.provider == "ollama":
-            self.model = self._resolve_ollama_model(model)
+            self.model = self._resolve_ollama_model(model or os.getenv("OLLAMA_MODEL"))
         elif self.provider in ["jev", "typesafe"]:
             self.model = model or "jev-system1"
         elif self.provider == "gemini":
-            self.model = model or "gemini-3.5-flash-lite"
+            self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
         else:
             self.model = model or "gpt-4o"
 
