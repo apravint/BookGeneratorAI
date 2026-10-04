@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--tamil", action="store_true", help="Shortcut preset flag to generate rich authentic Tamil content")
     parser.add_argument("--provider", "-p", default="ollama", choices=["ollama", "jev", "openai", "gemini", "anthropic"])
 
-    parser.add_argument("--model", "-m", default="deepseek-r1:latest", help="Model name (e.g. deepseek-r1:latest, gpt-4o)")
+    parser.add_argument("--model", "-m", default="qwen2.5:1.5b", help="Model name (e.g. qwen2.5:1.5b, deepseek-r1:8b, gpt-4o)")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama server URL")
     parser.add_argument("--max-revisions", type=int, default=1, help="Max adversarial critic revision loops per chapter")
     parser.add_argument("--output", "-o", default="Generated_Book.docx", help="Output .docx file path")

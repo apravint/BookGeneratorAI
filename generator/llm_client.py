@@ -45,7 +45,7 @@ class LlmClient:
 
     def _resolve_ollama_model(self, user_model: str = None) -> str:
         """Queries local Ollama tags API to resolve model names and installed aliases."""
-        target = user_model or "deepseek-r1:latest"
+        target = user_model or "qwen2.5:1.5b"
         try:
             url = f"{self.ollama_url}/api/tags"
             req = urllib.request.Request(url)
@@ -112,6 +112,7 @@ class LlmClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        ctx_size = 8192 if any(m in self.model for m in ["1.5b", "0.5b", "3b"]) else 16384
         payload = {
             "model": self.model,
             "messages": messages,
@@ -119,7 +120,7 @@ class LlmClient:
             "options": {
                 "temperature": 0.7,
                 "num_predict": max_tokens,
-                "num_ctx": 16384  # Full context window per AGENTS.md mandate
+                "num_ctx": ctx_size
             }
         }
 
