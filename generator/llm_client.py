@@ -14,12 +14,15 @@ import urllib.error
 class LlmClient:
     def __init__(
         self,
-        provider: str = "ollama",
+        provider: str = None,
         api_key: str = None,
         model: str = None,
         ollama_url: str = "http://localhost:11434"
     ):
-        self.provider = provider.lower()
+        default_provider = "gemini" if (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")) else "ollama"
+        self.provider = (provider or default_provider).lower()
+        if self.provider == "default":
+            self.provider = default_provider
         if api_key:
             self.api_key = api_key
         else:
@@ -40,6 +43,8 @@ class LlmClient:
             self.model = self._resolve_ollama_model(model)
         elif self.provider in ["jev", "typesafe"]:
             self.model = model or "jev-system1"
+        elif self.provider == "gemini":
+            self.model = model or "gemini-3.5-flash-lite"
         else:
             self.model = model or "gpt-4o"
 
@@ -163,7 +168,7 @@ class LlmClient:
     def _call_gemini(self, prompt: str, system_prompt: str, max_tokens: int) -> str:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable is missing.")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model or 'gemini-1.5-pro'}:generateContent?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model or 'gemini-3.5-flash-lite'}:generateContent?key={self.api_key}"
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"parts": [{"text": (system_prompt + "\n\n" + prompt)}]}]
