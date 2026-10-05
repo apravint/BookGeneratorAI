@@ -168,14 +168,37 @@ python3 main.py \
 |---|---|---|---|
 | `--title` | `-t` | **Required** | Book title |
 | `--concept` | `-c` | `""` | Seed concept or story prompt |
-| `--genre` | `-g` | `auto` | Genre (`fiction`, `romance`, `business`, `technical`, `self-help`) |
+| `--language` | `-l` | `english` | Primary language (`tamil` / `english`) |
+| `--tamil` | | `False` | Preset flag for Tamil language book generation |
+| `--genre` | `-g` | `auto` | Genre (`tamil_historical`, `tamil_thirukkural`, `tamil_kavithai`, `tamil_fiction`, `fiction`, `business`) |
 | `--author` | `-a` | `Pravin Tamilan` | Author name for title page & headers |
-| `--provider` | `-p` | `ollama` | Provider (`ollama`, `openai`, `gemini`, `anthropic`) |
+| `--provider` | `-p` | `ollama` | Provider (`ollama`, `gemini`, `openai`, `anthropic`, `jev`) |
 | `--model` | `-m` | `deepseek-r1:latest` | Target LLM model |
 | `--ollama-url` | | `http://localhost:11434` | Local Ollama REST endpoint |
 | `--reset` | `-r` | `False` | Clean database (`memory/book_state.db`) & previous outputs before running |
 | `--max-revisions` | | `1` | Max critic revision loops per chapter |
 | `--output` | `-o` | `Generated_Book.docx` | Output path for `.docx` compilation |
+
+---
+
+## 🌐 Web Dashboards & Streamlit Studio
+
+### 1. Interactive Streamlit Studio App (`streamlit_app.py`)
+Run a modern, multi-tab Streamlit dashboard:
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+> Launch at **`http://localhost:8501`** to generate books, monitor live pipeline execution, read chapters, and download DOCX files.
+
+### 2. Built-in REST API & Multi-Book Web Server (`server.py`)
+Run a zero-dependency local REST API web server:
+
+```bash
+python3 server.py
+```
+> Access at **`http://localhost:8080`** for live 5-node agent pipeline monitoring and multi-book job creation.
 
 ---
 
