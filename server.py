@@ -26,13 +26,17 @@ JOB_LOCK = threading.Lock()
 class BookGeneratorHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
         parsed_url = urllib.parse.urlparse(path)
-        clean_path = parsed_url.path
+        clean_path = urllib.parse.unquote(parsed_url.path)
         
         if clean_path in ["/", "/index.html"]:
             return os.path.join(WEB_DIR, "index.html")
         elif clean_path in ["/styles.css", "/app.js"]:
             return os.path.join(WEB_DIR, clean_path.lstrip("/"))
-        return super().translate_path(path)
+            
+        target_path = os.path.abspath(os.path.join(WEB_DIR, clean_path.lstrip("/")))
+        if not target_path.startswith(os.path.abspath(WEB_DIR)):
+            return os.path.join(WEB_DIR, "index.html")
+        return target_path
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
