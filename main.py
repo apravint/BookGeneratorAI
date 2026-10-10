@@ -49,9 +49,9 @@ def main():
     parser.add_argument("--author", "-a", default="Pravin Tamilan", help="Author Name (default: 'Pravin Tamilan')")
     parser.add_argument("--language", "-l", default="tamil", choices=["english", "tamil", "auto"], help="Target language: english, tamil, auto (default: 'tamil')")
     parser.add_argument("--tamil", action="store_true", help="Shortcut preset flag to generate rich authentic Tamil content")
-    parser.add_argument("--provider", "-p", default="ollama", choices=["ollama", "jev", "openai", "gemini", "anthropic"])
-
-    parser.add_argument("--model", "-m", default="qwen2.5:1.5b", help="Model name (e.g. qwen2.5:1.5b, deepseek-r1:8b, gpt-4o)")
+    parser.add_argument("--provider", "-p", default=None, choices=["auto", "ollama", "jev", "openai", "gemini", "anthropic"], help="LLM Provider (default: auto-detected from environment)")
+    parser.add_argument("--model", "-m", default=None, help="Model name (e.g. gemini-3.5-flash-lite, qwen2.5:1.5b, gpt-4o)")
+    parser.add_argument("--chapters", "-n", type=int, default=12, help="Number of chapters to generate (default: 12)")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama server URL")
     parser.add_argument("--max-revisions", type=int, default=1, help="Max adversarial critic revision loops per chapter")
     parser.add_argument("--output", "-o", default="Generated_Book.docx", help="Output .docx file path")
@@ -62,8 +62,20 @@ def main():
     concept = args.concept or args.title
     language = "tamil" if args.tamil else args.language
 
+    # Auto-resolve provider if not explicitly passed
+    resolved_provider = args.provider
+    if not resolved_provider or resolved_provider == "auto":
+        resolved_provider = "gemini" if (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")) else "ollama"
+
     if args.reset:
         reset_environment(db_path="memory/book_state.db", output_dir="output")
+
+    # Initialize Clients & State Manager early to display resolved model
+    llm_client = LlmClient(
+        provider=resolved_provider,
+        model=args.model,
+        ollama_url=args.ollama_url
+    )
 
     print("\n" + "=" * 80)
     print("  BOOKGENERATOR AI v4.0 - PRODUCTION-GRADE MULTI-AGENT PIPELINE")
@@ -72,19 +84,15 @@ def main():
     print(f" Author:       {args.author}")
     print(f" Genre:        {args.genre.upper()}")
     print(f" Language:     {language.upper()} (தமிழ்)")
-    print(f" Provider:     {args.provider.upper()}")
-    print(f" Ollama URL:   {args.ollama_url}")
-    print(f" Model:        {args.model}")
+    print(f" Provider:     {llm_client.provider.upper()}")
+    print(f" Model:        {llm_client.model}")
+    print(f" Chapters:     {args.chapters}")
+    if llm_client.provider == "ollama":
+        print(f" Ollama URL:   {args.ollama_url}")
     print(f" Output File:  {args.output}")
     print(f" Reset Flag:   {args.reset}")
     print("=" * 80 + "\n")
 
-    # 1. Initialize Clients & State Manager
-    llm_client = LlmClient(
-        provider=args.provider,
-        model=args.model,
-        ollama_url=args.ollama_url
-    )
     state_mgr = StateManager(db_path="memory/book_state.db")
     file_writer = FileWriterTool(output_dir="output")
     file_writer.ensure_front_matter(
@@ -121,9 +129,10 @@ def main():
     reviewer = MasterAdversarialReviewer(llm_client)
     story_state = state_mgr.get_story_state()
 
-    total_chapters = len(master_outline.chapters)
+    chapters_to_run = master_outline.chapters[:args.chapters] if args.chapters else master_outline.chapters
+    total_chapters = len(chapters_to_run)
 
-    for chapter_beat in master_outline.chapters:
+    for chapter_beat in chapters_to_run:
         chap_num = chapter_beat.chapter_number
         print(f"\n--------------------------------------------------------------------------------")
         print(f"CHAPTER {chap_num}/{total_chapters}: {chapter_beat.title}")

@@ -183,6 +183,7 @@ def run_generation_task(job_id, params):
     JOBS[job_id] = job_record
 
 
+    chapters = str(params.get("chapters", "12"))
     cmd = [
         sys.executable, "main.py",
         "--title", title,
@@ -191,11 +192,14 @@ def run_generation_task(job_id, params):
         "--language", language,
         "--genre", genre,
         "--provider", provider,
-        "--model", model,
-        "--ollama-url", ollama_url,
+        "--chapters", chapters,
         "--output", output_docx_path,
         "--reset"
     ]
+    if model:
+        cmd.extend(["--model", model])
+    if ollama_url:
+        cmd.extend(["--ollama-url", ollama_url])
 
     print(f"\n[Web Server] Launching Book Generator process for '{title}' (Job: {job_id}): {' '.join(cmd)}")
 

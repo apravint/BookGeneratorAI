@@ -8,6 +8,7 @@ import json
 import re
 from schemas.models import WorldBible, CharacterRegistry, CharacterProfile, CharacterVoice
 from generator.llm_client import LlmClient
+from generator.json_parser import parse_llm_json, clean_json_string
 from prompts.system_prompts import CHARACTER_ARCHITECT_PROMPT, TAMIL_CHARACTER_ARCHITECT_PROMPT
 
 
@@ -68,14 +69,9 @@ Return output ONLY in JSON matching this schema:
         return self._fallback_registry(world_bible, author_name, is_tamil=is_tamil)
 
     def _parse_registry(self, text: str) -> CharacterRegistry:
-        try:
-            cleaned = self._clean_json(text)
-            data = json.loads(cleaned)
-            registry = CharacterRegistry.model_validate(data)
-            if registry.characters and len(registry.characters) > 0:
-                return registry
-        except Exception:
-            pass
+        registry = parse_llm_json(text, model_class=CharacterRegistry)
+        if registry and registry.characters and len(registry.characters) > 0:
+            return registry
         return None
 
     def _clean_json(self, text: str) -> str:

@@ -8,6 +8,7 @@ import json
 import re
 from schemas.models import WorldBible, WorldRule
 from generator.llm_client import LlmClient
+from generator.json_parser import parse_llm_json, clean_json_string
 from prompts.system_prompts import WORLD_BUILDER_PROMPT, TAMIL_WORLD_BUILDER_PROMPT
 
 
@@ -72,14 +73,9 @@ Return ONLY valid JSON output matching this schema:
         return fallback
 
     def _parse_world_bible(self, text: str) -> WorldBible:
-        try:
-            cleaned = self._clean_json(text)
-            data = json.loads(cleaned)
-            bible = WorldBible.model_validate(data)
-            if bible.rules and len(bible.rules) > 0 and bible.title:
-                return bible
-        except Exception:
-            pass
+        bible = parse_llm_json(text, model_class=WorldBible)
+        if bible and bible.rules and len(bible.rules) > 0 and bible.title:
+            return bible
         return None
 
     def _clean_json(self, text: str) -> str:
