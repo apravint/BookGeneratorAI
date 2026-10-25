@@ -158,13 +158,28 @@ def compile_epub(
     author: str,
     chapters_dir: str,
     output_path: str,
-    language: str = "english"
+    language: str = "english",
+    cover_image_path: str = None
 ) -> str:
     """Compiles markdown chapter files into a validated EPUB 3 document."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     lang_code = "ta" if language.lower() in ["tamil", "ta"] else "en"
     book_uuid = f"urn:uuid:{uuid.uuid4()}"
     mod_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Discover cover image if not explicitly provided
+    resolved_cover = cover_image_path
+    if not resolved_cover:
+        candidates = [
+            os.path.join(chapters_dir, "google_play_cover.jpg"),
+            os.path.join(chapters_dir, "cover.jpg"),
+            os.path.join(os.path.dirname(os.path.abspath(output_path)), "google_play_cover.jpg"),
+            os.path.join(os.path.dirname(os.path.abspath(output_path)), "cover.jpg")
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                resolved_cover = c
+                break
 
     # Discover and sort Markdown files
     front_matter_order = ["praise.md", "epigraph.md", "preface.md", "foreword.md"]
@@ -185,8 +200,24 @@ def compile_epub(
     nav_toc_items = []
     section_contents = {}
 
-    # Title Page
-    title_html = f"""<?xml version="1.0" encoding="utf-8"?>
+    # Title / Cover Page
+    if resolved_cover and os.path.exists(resolved_cover):
+        manifest_items.append('<item id="cover-image" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>')
+        title_html = f"""<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="{lang_code}" lang="{lang_code}">
+<head>
+    <title>{escape(title)}</title>
+    <link rel="stylesheet" type="text/css" href="style.css" />
+</head>
+<body style="margin: 0; padding: 0; text-align: center;">
+    <div style="text-align: center; margin: 0; padding: 0;">
+        <img src="cover.jpg" alt="{escape(title)}" style="max-width: 100%; height: auto; max-height: 100vh; object-fit: contain;" />
+    </div>
+</body>
+</html>"""
+    else:
+        title_html = f"""<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="{lang_code}" lang="{lang_code}">
 <head>
@@ -252,6 +283,8 @@ def compile_epub(
     # Stylesheet
     manifest_items.append('<item id="css" href="style.css" media-type="text/css"/>')
 
+    cover_meta = '<meta name="cover" content="cover-image"/>' if (resolved_cover and os.path.exists(resolved_cover)) else ''
+
     # OEBPS/content.opf
     content_opf = f"""<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookID">
@@ -261,6 +294,7 @@ def compile_epub(
         <dc:language>{lang_code}</dc:language>
         <dc:identifier id="BookID">{book_uuid}</dc:identifier>
         <meta property="dcterms:modified">{mod_time}</meta>
+        {cover_meta}
     </metadata>
     <manifest>
         {"\n        ".join(manifest_items)}
@@ -285,6 +319,9 @@ def compile_epub(
         ep.writestr("META-INF/container.xml", container_xml)
         ep.writestr("OEBPS/content.opf", content_opf)
         ep.writestr("OEBPS/style.css", CSS_CONTENT)
+        if resolved_cover and os.path.exists(resolved_cover):
+            with open(resolved_cover, "rb") as cf:
+                ep.writestr("OEBPS/cover.jpg", cf.read())
         for fname, content in section_contents.items():
             ep.writestr(f"OEBPS/{fname}", content)
 
