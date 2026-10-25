@@ -55,6 +55,7 @@ def main():
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama server URL")
     parser.add_argument("--max-revisions", type=int, default=1, help="Max adversarial critic revision loops per chapter")
     parser.add_argument("--output", "-o", default="Generated_Book.docx", help="Output .docx file path")
+    parser.add_argument("--epub", default=None, help="Output .epub file path (default: auto-named from output)")
     parser.add_argument("--reset", "-r", action="store_true", help="Reset state database and output directory before run")
 
     args = parser.parse_args()
@@ -181,16 +182,15 @@ def main():
         state_mgr.save_chapter_record(chap_num, draft_text, revision_brief, final_chapter_text)
 
         # Dynamic Story State Summarization for Rolling Context Window
-        print(f"  [Memory Engine] Updating Story So Far memory block for Chapter {chap_num}...")
-        summary_prompt = f"Provide a concise 3-bullet narrative recap of Chapter {chap_num}: {chapter_beat.title}.\nText snippet:\n{final_chapter_text[:1500]}"
-        try:
-            chap_summary = llm_client.generate_text(summary_prompt, system_prompt="You are a narrative continuity summarizer. Write in " + ("Tamil" if language in ["tamil", "ta"] else "English") + ".")
-        except Exception:
-            chap_summary = f"- Chapter {chap_num} ({chapter_beat.title}): Key events unfolded as planned."
-
-        story_state.story_so_far_summary += f"\n- Chapter {chap_num} ({chapter_beat.title}): {chap_summary.strip()}"
-        story_state.current_chapter = chap_num
-        state_mgr.save_story_state(story_state)
+        print(f"  [Memory Engine] Updating Story Knowledge Graph & Memory block for Chapter {chap_num}...")
+        story_state = state_mgr.update_dynamic_story_state(
+            story_state=story_state,
+            chapter_number=chap_num,
+            chapter_title=chapter_beat.title,
+            chapter_text=final_chapter_text,
+            llm_client=llm_client,
+            language=language
+        )
 
         # Live Incremental Disk Compilation Bridge
         print(f"  [Disk Sync] Updating live .docx output on hard drive...")
@@ -217,6 +217,19 @@ def main():
         language=language
     )
     print(f"🎉 SUCCESS: Multi-Agent Commercial Book successfully generated: {os.path.abspath(args.output)}")
+
+    epub_output = args.epub or (os.path.splitext(args.output)[0] + ".epub")
+    try:
+        file_writer.compile_epub(
+            title=args.title,
+            author=args.author,
+            epub_path=epub_output,
+            language=language
+        )
+        print(f"🎉 SUCCESS: Commercial EPUB 3 Edition compiled: {os.path.abspath(epub_output)}")
+    except Exception as ex:
+        print(f"  ⚠️ [EPUB Compilation Warning]: {ex}")
+
     print("=" * 80 + "\n")
 
 

@@ -22,9 +22,10 @@ Standard LLM wrappers fail catastrophically when tasked with long-form writing:
 
 ### The Architectural Solution
 `BookGeneratorAI` implements an enterprise-grade multi-agent architecture featuring:
-- **Hierarchical State Isolation**: The drafting agent receives *only* the current scene micro-beat, active character voice fingerprints, and a 1,200-word rolling memory summary—never the full 80,000-word history.
-- **Beat-by-Beat Iterative Scene Generator**: Chapters are decomposed into 6 sub-beats (600–900 words each), guaranteeing rich sensory grounding and avoiding model context ceilings.
-- **Adversarial Anti-Slop & Continuity Critics**: An independent reviewer agent audits every drafted chapter against banned tropes and character voice fingerprints, issuing mandatory revision briefs before state commitment.
+- **Hierarchical State Isolation & Dynamic Knowledge Graph**: The drafting agent receives *only* the current scene micro-beat, active character living state, epistemic rules, active plot loops, and a rolling memory summary—never the full 80,000-word history.
+- **Scene & Sequel Dramatic Beat Sheets**: Chapters are decomposed into 6 micro-beats adhering to Dwight Swain's dramatic patterns (Goal → Conflict → Disaster Reversal → Emotional Reaction → Dilemma → Pivotal Decision) with explicit micro-tension curves (1-10) and internal POV subtext.
+- **Gary Provost Sentence Cadence & Deep POV Engine**: The adversarial critic intercepts repetitive mid-length sentence runs (the 15-word AI drone), enforces staccato (<5 words) and sweeping (>26 words) variety, and purges perceptual filter words ("she noticed that", "he felt that").
+- **Commercial Dual-Format Compilation**: Compiles simultaneously to luxury trade **DOCX** with custom palettes and callouts, and validated **EPUB 3** with responsive typography, drop caps, and semantic navigation ready for Amazon KDP and Apple Books.
 
 ---
 
@@ -85,8 +86,8 @@ Standard LLMs default to generic clichés and preachy summary endings. `BookGene
                                      │
                                      ▼
                        ┌─────────────────────────┐
-                       │ Commercial DOCX Bridge  │
-                       │ (Dynamic TOC & Index)   │
+                       │ Commercial Export Bridge│
+                       │ (DOCX + Validated EPUB3)│
                        └─────────────────────────┘
 ```
 

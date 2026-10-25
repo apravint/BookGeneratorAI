@@ -10,7 +10,12 @@ TAMIL_FORBIDDEN_SLOP_PATTERNS = [
     "ஒரு பெருமூச்சு விட்டான்",
     "ஒரு பெருமூச்சு விட்டாள்",
     "அவர்களுக்குத் தெரிந்திருக்கவில்லை",
-    "இறுதியில் அவர்கள் உணர்ந்தது"
+    "இறுதியில் அவர்கள் உணர்ந்தது",
+    "அவனுடைய இதயம் வேகமாகத் துடித்தது",
+    "அவள் கவனித்தாள்",
+    "அவன் உணர்ந்தான்",
+    "அவள் உணர்ந்தாள்",
+    "முடிவாக அவர்கள் கற்றுக்கொண்டது"
 ]
 
 TAMIL_WORLD_BUILDER_PROMPT = """நீங்கள் ஒரு தமிழ் இலக்கிய மற்றும் நவீன நாவல் உருவாக்க நிபுணர் (Master World Builder Agent).
@@ -79,7 +84,27 @@ FORBIDDEN_SLOP_PATTERNS = [
     "palpable tension",
     "little did they know",
     "little did she know",
-    "little did he know"
+    "little did he know",
+    "a sense of calm",
+    "a sense of dread",
+    "a wave of panic",
+    "ignited a flame within",
+    "echoed in the silence",
+    "dance of shadows"
+]
+
+PERCEPTUAL_FILTER_PATTERNS = [
+    "she noticed that",
+    "he noticed that",
+    "she felt that",
+    "he felt that",
+    "she realized that",
+    "he realized that",
+    "could see that",
+    "could hear that",
+    "watched as",
+    "seemed to be",
+    "appeared to be"
 ]
 
 WORLD_BUILDER_PROMPT = """You are a World-Class Narrative Architect and World Builder Agent.
@@ -116,11 +141,16 @@ PROSE_DRAFTER_PROMPT = """You are an elite, award-winning author. Your prose is 
 Your objective is to write vivid, high-pacing chapter manuscript prose strictly following the assigned Chapter Beat Sheet.
 
 STRICT EXECUTION CONSTRAINTS:
-1. Show, Don't Tell: Anchor the narrative in concrete sensory details and immediate character action. Do not summarize elapsed time or off-screen events unless explicitly instructed.
-2. Banish AI Slop: You are strictly forbidden from using generic LLM tropes, including but not limited to: "a tapestry of," "a testament to," "shivers down her spine," "a palpable tension," or "little did they know."
-3. No Moralizing Conclusions: End scenes/chapters precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
-4. Dialogue Realism: Characters must speak with distinct voices based on their profiles. Include interruptions, unspoken subtext, and physical actions (beats) between dialogue lines.
-5. Context Isolation: Write ONLY the assigned chapter based on the provided World Bible, Character Profiles, Preceding Summary, and Beat Sheet.
+1. Show, Don't Tell & Deep POV: Anchor narrative in concrete sensory details and direct character perceptions. Never use perceptual filter phrasing (e.g. "she noticed that", "he felt a sense of", "she could hear"). Present the action directly to the reader.
+2. Gary Provost Sentence Rhythm: Relentlessly vary sentence lengths. Alternate short, punchy 2-5 word sentences with expansive, rhythmically structured 25+ word sentences. Avoid repetitive mid-length (15-word) sentence monotony.
+3. Three-Layer Dialogue: Dialogue must never be entirely on-the-nose. Layer each spoken interaction with:
+   - Spoken text (what characters say)
+   - Unspoken subtext (what characters hide, fear, or want)
+   - Physical character beats (what their hands, eyes, and bodies do during speech)
+4. Dramatic Scene & Sequel Adherence: Strictly fulfill the assigned micro-beat type (SCENE_GOAL, CONFLICT_ESCALATION, DISASTER_REVERSAL, EMOTIONAL_REACTION, DILEMMA_CALCULATION, or PIVOTAL_DECISION) with the required tension level.
+5. Banish AI Slop: You are strictly forbidden from using generic LLM tropes: "a tapestry of," "a testament to," "shivers down her spine," "a palpable tension," "little did they know," or "echoed in the silence."
+6. No Moralizing Conclusions: End scenes/chapters precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
+7. Context Isolation: Write ONLY the assigned chapter based on the provided World Bible, Character Profiles, Preceding Summary, Active Plot Threads, and Beat Sheet.
 """
 
 CONTINUITY_EDITOR_PROMPT = """You are a Senior Continuity Editor.

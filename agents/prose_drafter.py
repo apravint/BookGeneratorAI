@@ -32,6 +32,27 @@ class ProseDrafterAgent:
             for c in registry.characters
         ])
 
+        # Dynamic Knowledge Graph & Epistemic Context
+        kg_lines = []
+        if story_state:
+            if story_state.active_plot_threads:
+                kg_lines.append(f"* Active Plot Loops: {', '.join(story_state.active_plot_threads[:4])}")
+            if getattr(story_state, "character_conditions", None):
+                conds = [
+                    f"{name}: [Status={cond.physical_wounds_or_status}, Items={cond.inventory_items}, Emotion={cond.emotional_state}]"
+                    for name, cond in story_state.character_conditions.items()
+                ]
+                if conds:
+                    kg_lines.append(f"* Character Living State: {'; '.join(conds[:3])}")
+            if getattr(story_state, "epistemic_secrets", None):
+                secr = [
+                    f"'{s.get('fact')}': known to {s.get('known_by')}, HIDDEN from {s.get('hidden_from')}"
+                    for s in story_state.epistemic_secrets[:2]
+                ]
+                if secr:
+                    kg_lines.append(f"* Secret/Epistemic Rules: {'; '.join(secr)}")
+        knowledge_graph_context = "\n".join(kg_lines) if kg_lines else "* All initial plot threads unfolding normally."
+
         revision_context = ""
         if revision_brief and not revision_brief.passed_audit:
             revision_context = f"""
@@ -49,6 +70,9 @@ Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revis
 
         for idx, sub_beat in enumerate(chapter_beat.sub_beats, start=1):
             beat_label = f"{chapter_beat.chapter_number}.{idx}"
+            btype = getattr(sub_beat, 'beat_type', 'SCENE_GOAL')
+            tension = getattr(sub_beat, 'micro_tension_level', 5)
+            subtext = getattr(sub_beat, 'pov_internal_state', 'Focused on scene goal with suppressed doubts.')
 
             user_prompt = f"""**Role:** You are an elite, award-winning author specializing in {world_bible.genre} genre. Your prose is immersive, realistic, and character-driven.
 {lang_constraint}
@@ -59,6 +83,8 @@ Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revis
 * **Genre Style Guide:** Genre={world_bible.genre.upper()}. Setting={world_bible.setting_overview}. World Rules={[r.rule_name + ': ' + r.narrative_consequence for r in world_bible.rules[:3]]}
 * **Active Characters:**
 {char_voices}
+* **Dynamic Knowledge Graph & State:**
+{knowledge_graph_context}
 * **Story So Far (Preceding Chapters):**
 {story_state.story_so_far_summary[-1200:] if story_state.story_so_far_summary else "This is Chapter 1 - Opening chapter."}
 
@@ -69,6 +95,9 @@ Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revis
 Chapter {chapter_beat.chapter_number}: {chapter_beat.title}
 POV Character: {chapter_beat.pov_character}
 Location: {chapter_beat.location}
+Dramatic Beat Type: {btype}
+Micro-Tension Level: {tension}/10
+POV Internal Subtext: {subtext}
 Scene Section: {sub_beat.section_number}
 Scene Objective: {sub_beat.scene_objective}
 Key Interaction / Conflict: {sub_beat.key_interaction}
@@ -77,12 +106,14 @@ Ending Transition Hook: {sub_beat.ending_hook}
 {revision_context}
 
 **Strict Execution Constraints:**
-1. **Show, Don't Tell:** Anchor the narrative in concrete sensory details and immediate character action. Do not summarize elapsed time or off-screen events unless explicitly instructed.
-2. **Language Integrity:** {lang_constraint}
-3. **Banish AI Slop:** You are strictly forbidden from using generic LLM tropes, including: "a tapestry of," "a testament to," "shivers down her spine," "ஒரு சான்றாக அமைந்தது", "முதுகெலும்பில் நடுக்கம்".
-4. **No Moralizing Conclusions:** End the scene precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
-5. **Dialogue Realism:** Characters must speak with distinct voices based on their profiles. Include interruptions, unspoken subtext, and physical actions (beats) between dialogue lines.
-6. **Section Heading:** Start the section with a clean markdown heading: `### {sub_beat.section_number} {sub_beat.scene_objective}`.
+1. **Show, Don't Tell & Deep POV:** Anchor the narrative in concrete sensory details and immediate character action. Ban filter words ("she saw that", "he felt", "noticed that").
+2. **Gary Provost Sentence Rhythm:** Relentlessly vary sentence lengths. Mix punchy 2-5 word statements with expansive 25+ word rhythmic sentences. Avoid monotonous mid-length phrasing.
+3. **Three-Layer Dialogue:** Characters must speak with distinct voices based on their profiles. Layer spoken lines with unspoken subtext and physical action beats between dialogue.
+4. **Dramatic Beat Adherence:** Fulfill the assigned dramatic beat type ({btype}) at tension level {tension}/10.
+5. **Language Integrity:** {lang_constraint}
+6. **Banish AI Slop:** Strictly forbidden from using generic LLM clichés: "a tapestry of," "a testament to," "shivers down her spine," "ஒரு சான்றாக அமைந்தது", "முதுகெலும்பில் நடுக்கம்", "echoed in the silence".
+7. **No Moralizing Conclusions:** End the scene precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
+8. **Section Heading:** Start the section with a clean markdown heading: `### {sub_beat.section_number} {sub_beat.scene_objective}`.
 """
             scene_raw = self.llm.generate_text(user_prompt, system_prompt=system_prompt, max_tokens=2048)
             clean_scene = self._post_process_scene(scene_raw, sub_beat)

@@ -4,7 +4,7 @@ Defines strict schemas for World Bible, Character Registries, Chapter Beats, Rev
 Includes flexible field alias choices (e.g. consequence/impact) and default fallbacks for LLM outputs.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 
 try:
@@ -82,9 +82,20 @@ class CharacterRegistry(BaseModel):
         return None
 
 
+class CharacterCondition(BaseModel):
+    character_name: str = Field(default="Protagonist", description="Character name")
+    physical_wounds_or_status: List[str] = Field(default_factory=list, description="Injuries or physical status")
+    inventory_items: List[str] = Field(default_factory=list, description="Items / documents / weapons currently held")
+    emotional_state: str = Field(default="Determined", description="Current emotional valence")
+    current_location: str = Field(default="Unknown", description="Current whereabouts")
+
+
 class SubBeat(BaseModel):
     section_number: str = Field(default="1.1", description="Section number")
     scene_objective: str = Field(default="Execute core scene goal", description="Scene goal")
+    beat_type: str = Field(default="SCENE_GOAL", description="Dramatic beat type (SCENE_GOAL, CONFLICT_ESCALATION, DISASTER_REVERSAL, EMOTIONAL_REACTION, DILEMMA_CALCULATION, PIVOTAL_DECISION)")
+    micro_tension_level: int = Field(default=5, ge=1, le=10, description="Micro-tension index (1=calm, 10=maximum crisis)")
+    pov_internal_state: str = Field(default="Focused on scene goal with unspoken subtext.", description="Internal psychological subtext")
     characters_present: List[str] = Field(default_factory=list, description="Characters present")
     key_interaction: str = Field(default="Pivotal dialogue and tension turning point", description="Interaction")
     sensory_or_structural_detail: str = Field(default="Vivid grounding detail and environment anchor", description="Sensory detail")
@@ -136,4 +147,6 @@ class StoryState(BaseModel):
     active_plot_threads: List[str] = Field(default_factory=list, description="Unresolved plot points")
     resolved_plot_threads: List[str] = Field(default_factory=list, description="Resolved plot points")
     character_states: Dict[str, str] = Field(default_factory=dict, description="Character state tracker")
+    character_conditions: Dict[str, CharacterCondition] = Field(default_factory=dict, description="Detailed physical/emotional inventory tracker")
+    epistemic_secrets: List[Dict[str, Any]] = Field(default_factory=list, description="Secrets known vs hidden among characters")
     key_discoveries: List[str] = Field(default_factory=list, description="Key discoveries")

@@ -37,7 +37,15 @@ class MasterOutlinerAgent:
                         "உச்சக்கட்டப் பதற்றம் (Escalating Stakes)",
                         "நிறைவுக் களம் (Climactic Transition)"
                     ]
-                elif world_bible.genre == "fiction":
+                    beat_types = [
+                        "SCENE_GOAL",
+                        "CONFLICT_ESCALATION",
+                        "DISASTER_REVERSAL",
+                        "EMOTIONAL_REACTION",
+                        "DILEMMA_CALCULATION",
+                        "PIVOTAL_DECISION"
+                    ]
+                elif world_bible.genre == "fiction" or "fiction" in world_bible.genre.lower():
                     section_titles = [
                         "The Inciting Spark",
                         "Rising Tension & Discovery",
@@ -45,6 +53,14 @@ class MasterOutlinerAgent:
                         "Uncovering Hidden Realities",
                         "Escalating Stakes",
                         "Climactic Transition"
+                    ]
+                    beat_types = [
+                        "SCENE_GOAL",
+                        "CONFLICT_ESCALATION",
+                        "DISASTER_REVERSAL",
+                        "EMOTIONAL_REACTION",
+                        "DILEMMA_CALCULATION",
+                        "PIVOTAL_DECISION"
                     ]
                 else:
                     section_titles = [
@@ -55,17 +71,39 @@ class MasterOutlinerAgent:
                         "Resilience & Risk Mitigation",
                         "Key Executive Takeaways"
                     ]
+                    beat_types = [
+                        "EXECUTIVE_HOOK",
+                        "CORE_MECHANICS",
+                        "EMPIRICAL_PROOF",
+                        "CASE_ANALYSIS",
+                        "RISK_RESILIENCE",
+                        "ACTION_FRAMEWORK"
+                    ]
+
+                tension_curve = [4, 6, 8, 5, 7, 9]
 
                 for sub_idx in range(1, 7):
                     stitle = section_titles[sub_idx - 1]
+                    btype = beat_types[sub_idx - 1]
+                    tension = tension_curve[sub_idx - 1]
+
                     scene_obj = f"{title} - {stitle}" if is_tamil else f"{stitle} in {title}"
                     key_inter = f"{stitle} - முக்கிய திருப்பம்" if is_tamil else f"Pivotal narrative turning point for {stitle}"
                     sensory = f"சூழல் வர்ணனை: {world_bible.setting_overview[:40]}" if is_tamil else f"Atmospheric detail anchored in {world_bible.setting_overview[:40]}"
                     ending = f"அடுத்த பகுதி {num}.{sub_idx+1 if sub_idx < 6 else 1}-க்கான இணைப்பு" if is_tamil else f"Transition hook into section {num}.{sub_idx+1 if sub_idx < 6 else 1}"
+                    
+                    subtext = (
+                        "கதாபாத்திரத்தின் உள்ளுணர்வு: வெளிப்படையான இலக்கை அடைவதில் முனைப்புடன் கூடிய மறைமுக பதற்றம்."
+                        if is_tamil
+                        else f"Internal subtext for {btype}: Pursuing the immediate scene goal while concealing inner uncertainty and competing motives."
+                    )
 
                     sub_beats.append(SubBeat(
                         section_number=f"{num}.{sub_idx}",
                         scene_objective=scene_obj,
+                        beat_type=btype,
+                        micro_tension_level=tension,
+                        pov_internal_state=subtext,
                         characters_present=[c.name for c in registry.characters[:2]],
                         key_interaction=key_inter,
                         sensory_or_structural_detail=sensory,

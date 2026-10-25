@@ -5,6 +5,7 @@ Scrutinizes chapter drafts against WorldBible, CharacterRegistry, and Anti-Slop 
 """
 
 import json
+import re
 from typing import List
 from schemas.models import (
     WorldBible,
@@ -21,7 +22,8 @@ from prompts.system_prompts import (
     ANTI_SLOP_EDITOR_PROMPT,
     FORBIDDEN_SLOP_PATTERNS,
     TAMIL_FORBIDDEN_SLOP_PATTERNS,
-    TAMIL_ANTI_SLOP_EDITOR_PROMPT
+    TAMIL_ANTI_SLOP_EDITOR_PROMPT,
+    PERCEPTUAL_FILTER_PATTERNS
 )
 
 
@@ -58,6 +60,23 @@ class ContinuityEditorAgent:
                     description=f"World rule '{rule.rule_name}' broken without applying consequence: {rule.narrative_consequence}",
                     remedy=f"Incorporate consequence: {rule.narrative_consequence}"
                 ))
+
+        # Epistemic state & secret leaks check
+        if story_state and hasattr(story_state, "epistemic_secrets"):
+            for secret in story_state.epistemic_secrets:
+                fact = secret.get("fact", "")
+                known_by = [k.lower() for k in secret.get("known_by", [])]
+                hidden_from = [h.lower() for h in secret.get("hidden_from", [])]
+                if fact and fact.lower() in chapter_text.lower():
+                    for unaware_char in hidden_from:
+                        pattern = rf"{unaware_char}.*?said.*?{re.escape(fact)}"
+                        if re.search(pattern, chapter_text, re.IGNORECASE):
+                            issues.append(ContinuityIssue(
+                                severity="CRITICAL",
+                                location=f"Chapter {chapter_number}",
+                                description=f"Character '{unaware_char}' revealed secret '{fact}' before learning it.",
+                                remedy=f"Ensure '{unaware_char}' does not possess or speak of '{fact}' until revealed."
+                            ))
         return issues
 
 
@@ -68,9 +87,10 @@ class AntiSlopEditorAgent:
     def audit_slop(self, chapter_number: int, chapter_text: str, language: str = "english") -> List[AntiSlopViolation]:
         violations = []
         text_lower = chapter_text.lower()
+        is_tamil = language and language.lower() in ["tamil", "ta"]
 
         patterns = FORBIDDEN_SLOP_PATTERNS
-        if language and language.lower() in ["tamil", "ta"]:
+        if is_tamil:
             patterns = patterns + TAMIL_FORBIDDEN_SLOP_PATTERNS
 
         for pattern in patterns:
@@ -81,6 +101,20 @@ class AntiSlopEditorAgent:
                     reason="Banned AI cliché / writing trope.",
                     replacement_suggestion=f"Remove or replace '{pattern}' with vivid, original prose."
                 ))
+
+        # Check for perceptual filter words in English prose
+        if not is_tamil:
+            for filter_pattern in PERCEPTUAL_FILTER_PATTERNS:
+                if filter_pattern in text_lower:
+                    violations.append(AntiSlopViolation(
+                        phrase_or_pattern=filter_pattern,
+                        line_snippet=f"Detected perceptual filter '{filter_pattern}'.",
+                        reason="Filter language weakens Deep POV immersion.",
+                        replacement_suggestion=f"Cut '{filter_pattern}' and describe the sensory action directly."
+                    ))
+
+        # Check Gary Provost Sentence Cadence & Rhythm
+        violations.extend(self.audit_sentence_cadence(chapter_text, is_tamil=is_tamil))
 
         # Check for preachy conclusion at end of chapter text
         lines = [l.strip() for l in chapter_text.split("\n") if l.strip()]
@@ -94,6 +128,49 @@ class AntiSlopEditorAgent:
                     reason="Artificial moralizing summary paragraph at chapter end.",
                     replacement_suggestion="Strip final summary paragraph. End on concrete scene action or cliffhanger."
                 ))
+
+        return violations
+
+    def audit_sentence_cadence(self, chapter_text: str, is_tamil: bool = False) -> List[AntiSlopViolation]:
+        violations = []
+        raw_sentences = re.split(r'(?<=[.!?])\s+', chapter_text)
+        # Filter out markdown headings, empty items, and short non-sentence fragments
+        sentences = [
+            s.strip() for s in raw_sentences
+            if s.strip() and not s.strip().startswith('#') and len(s.split()) >= 2
+        ]
+
+        if len(sentences) < 5:
+            return violations
+
+        word_counts = [len(s.split()) for s in sentences]
+
+        # 1. Check for 5+ consecutive monotonous mid-length sentences (12-22 words)
+        monotone_streak = 0
+        for wc in word_counts:
+            if 12 <= wc <= 22:
+                monotone_streak += 1
+                if monotone_streak >= 5:
+                    violations.append(AntiSlopViolation(
+                        phrase_or_pattern="Monotonous Sentence Cadence",
+                        line_snippet="Detected 5+ consecutive sentences with monotonous mid-length (12-22 words).",
+                        reason="Monotonous sentence rhythm causes reader fatigue (violates Gary Provost rule).",
+                        replacement_suggestion="Vary sentence length: intercut punchy 2-5 word statements with sweeping 25+ word sensory sentences."
+                    ))
+                    break
+            else:
+                monotone_streak = 0
+
+        # 2. Check for presence of dynamic extremes (staccato vs sweeping sentences)
+        has_staccato = any(wc <= 5 for wc in word_counts)
+        has_sweeping = any(wc >= 26 for wc in word_counts)
+        if not has_staccato and len(sentences) >= 20:
+            violations.append(AntiSlopViolation(
+                phrase_or_pattern="Lack of Staccato Rhythm",
+                line_snippet="No short punchy sentences (<=5 words) found in chapter.",
+                reason="Prose lacks dynamic impact punctuation.",
+                replacement_suggestion="Add short, punchy sentences during moments of realization, surprise, or tension."
+            ))
 
         return violations
 

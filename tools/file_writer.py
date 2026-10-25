@@ -6,6 +6,7 @@ Appends intermediate markdown files and compiles final commercial .docx document
 import os
 import shutil
 from generator.docx_compiler import compile_book
+from tools.epub_compiler import compile_epub
 
 
 class FileWriterTool:
@@ -55,6 +56,15 @@ class FileWriterTool:
             author=author,
             chapters_dir=self.output_dir,
             output_path=docx_path,
+            language=language
+        )
+
+    def compile_epub(self, title: str, author: str, epub_path: str, language: str = "english") -> str:
+        return compile_epub(
+            title=title,
+            author=author,
+            chapters_dir=self.output_dir,
+            output_path=epub_path,
             language=language
         )
 
