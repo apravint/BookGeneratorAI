@@ -59,6 +59,7 @@ def main():
     parser.add_argument("--output", "-o", default="Generated_Book.docx", help="Output .docx file path")
     parser.add_argument("--epub", default=None, help="Output .epub file path (default: auto-named from output)")
     parser.add_argument("--reset", "-r", action="store_true", help="Reset state database and output directory before run")
+    parser.add_argument("--resume", action="store_true", default=True, help="Resume generation skipping previously completed chapters (default: True)")
     parser.add_argument("--export-cards", default=None, help="Directory to export portable character cards and lorebook JSON (MuMu style)")
     parser.add_argument("--import-lorebook", default=None, help="Path to pre-existing lorebook JSON pack to import World Bible & Characters from")
 
@@ -110,7 +111,19 @@ def main():
     # 2. PHASE 1: Foundation (Architect Agents)
     print("PHASE 1: Foundation Setup (Architect Agents)...")
     
-    if args.import_lorebook and os.path.exists(args.import_lorebook):
+    existing_world = state_mgr.get_world_bible() if not args.reset else None
+    existing_chars = state_mgr.get_character_registry() if not args.reset else None
+    existing_outline = state_mgr.get_master_outline() if not args.reset else None
+
+    if existing_world and existing_chars and existing_outline:
+        print("  [State Manager] Found existing foundation in database. Resuming book...")
+        world_bible = existing_world
+        character_registry = existing_chars
+        master_outline = existing_outline
+        print(f"  ✓ World Bible: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined, Language: {world_bible.language}).")
+        print(f"  ✓ Character Registry: {len(character_registry.characters)} characters loaded.")
+        print(f"  ✓ Master Outline: {len(master_outline.chapters)} chapter beat sheets loaded.")
+    elif args.import_lorebook and os.path.exists(args.import_lorebook):
         print(f"  [Lorebook Import] Loading World Bible and Characters from '{args.import_lorebook}'...")
         world_bible, character_registry, imported_relations = CardManager.import_lorebook(args.import_lorebook)
         state_mgr.save_world_bible(world_bible)
@@ -120,6 +133,12 @@ def main():
             init_state.character_relationships.extend(imported_relations)
             state_mgr.save_story_state(init_state)
         print(f"  ✓ Imported: '{world_bible.title}', {len(character_registry.characters)} characters, {len(imported_relations)} relations.")
+
+        outliner = MasterOutlinerAgent(llm_client)
+        print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
+        master_outline = outliner.build_outline(world_bible, character_registry, language=language)
+        state_mgr.save_master_outline(master_outline)
+        print(f"  ✓ Master Outline Created: {len(master_outline.chapters)} chapter beat sheets scaffolded.")
     else:
         world_builder = WorldBuilderAgent(llm_client)
         print("  [Agent: World Builder] Generating structured World Bible...")
@@ -133,11 +152,11 @@ def main():
         state_mgr.save_character_registry(character_registry)
         print(f"  ✓ Character Registry Created: {len(character_registry.characters)} characters initialized.")
 
-    outliner = MasterOutlinerAgent(llm_client)
-    print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
-    master_outline = outliner.build_outline(world_bible, character_registry, language=language)
-    state_mgr.save_master_outline(master_outline)
-    print(f"  ✓ Master Outline Created: {len(master_outline.chapters)} chapter beat sheets scaffolded.")
+        outliner = MasterOutlinerAgent(llm_client)
+        print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
+        master_outline = outliner.build_outline(world_bible, character_registry, language=language)
+        state_mgr.save_master_outline(master_outline)
+        print(f"  ✓ Master Outline Created: {len(master_outline.chapters)} chapter beat sheets scaffolded.")
 
     # 3. PHASE 2 & 3: Execution & Adversarial Revision Loop
     print("\nPHASE 2 & 3: Execution & Adversarial Revision Loop...")
@@ -153,6 +172,14 @@ def main():
         print(f"\n--------------------------------------------------------------------------------")
         print(f"CHAPTER {chap_num}/{total_chapters}: {chapter_beat.title}")
         print(f"--------------------------------------------------------------------------------")
+
+        chap_record = state_mgr.get_chapter_record(chap_num) if not args.reset else None
+        md_file_path = os.path.join(file_writer.output_dir, f"chapter_{chap_num:02d}.md")
+        if chap_record and chap_record.get("final_text") and os.path.exists(md_file_path) and os.path.getsize(md_file_path) > 100:
+            final_chapter_text = chap_record["final_text"]
+            chap_words = len(final_chapter_text.split())
+            print(f"  ✓ Chapter {chap_num} already finalized ({chap_words} words). Skipping draft phase.")
+            continue
 
         revision_brief = None
         final_chapter_text = ""

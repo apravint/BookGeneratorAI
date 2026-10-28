@@ -104,7 +104,7 @@ class MasterOutlinerAgent:
                     btype = beat_types[sub_idx - 1]
                     tension = tension_curve[sub_idx - 1]
 
-                    scene_obj = f"{title} - {stitle}" if is_tamil else f"{stitle} in {title}"
+                    scene_obj = stitle
                     key_inter = f"{stitle} - முக்கிய திருப்பம்" if is_tamil else f"Pivotal narrative turning point for {stitle}"
                     sensory = f"சூழல் வர்ணனை: {world_bible.setting_overview[:40]}" if is_tamil else f"Atmospheric detail anchored in {world_bible.setting_overview[:40]}"
                     ending = f"அடுத்த பகுதி {num}.{sub_idx+1 if sub_idx < 6 else 1}-க்கான இணைப்பு" if is_tamil else f"Transition hook into section {num}.{sub_idx+1 if sub_idx < 6 else 1}"
