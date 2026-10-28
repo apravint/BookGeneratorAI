@@ -33,6 +33,13 @@ class TestStateManager(unittest.TestCase):
             brief = RevisionBrief(passed_audit=True)
             mgr.save_chapter_record(1, "Draft content", brief, "Final content")
 
+            # 4. Retrieve chapter record and verify completed chapters
+            record = mgr.get_chapter_record(1)
+            self.assertIsNotNone(record)
+            self.assertEqual(record["chapter_number"], 1)
+            self.assertEqual(record["final_text"], "Final content")
+            self.assertEqual(mgr.get_completed_chapter_numbers(), [1])
+
         finally:
             if os.path.exists(db_path):
                 os.remove(db_path)

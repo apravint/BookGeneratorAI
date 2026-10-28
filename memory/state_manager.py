@@ -97,6 +97,39 @@ class StateManager:
         finally:
             conn.close()
 
+    def get_chapter_record(self, chapter_number: int) -> Optional[dict]:
+        """Retrieves an existing chapter record from the database."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT chapter_number, draft_text, revision_brief_json, final_text, updated_at
+                FROM chapter_revisions WHERE chapter_number = ?
+            """, (chapter_number,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "chapter_number": row[0],
+                    "draft_text": row[1],
+                    "revision_brief_json": row[2],
+                    "final_text": row[3],
+                    "updated_at": row[4]
+                }
+            return None
+        finally:
+            conn.close()
+
+    def get_completed_chapter_numbers(self) -> List[int]:
+        """Returns a sorted list of chapter numbers already finalized in the database."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT chapter_number FROM chapter_revisions ORDER BY chapter_number ASC")
+            rows = cursor.fetchall()
+            return [r[0] for r in rows]
+        finally:
+            conn.close()
+
     def update_dynamic_story_state(
         self,
         story_state: StoryState,
