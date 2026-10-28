@@ -32,7 +32,7 @@ class ProseDrafterAgent:
             for c in registry.characters
         ])
 
-        # Dynamic Knowledge Graph & Epistemic Context
+        # Dynamic Knowledge Graph, Relationships & Foreshadowing Context
         kg_lines = []
         if story_state:
             if story_state.active_plot_threads:
@@ -44,6 +44,23 @@ class ProseDrafterAgent:
                 ]
                 if conds:
                     kg_lines.append(f"* Character Living State: {'; '.join(conds[:3])}")
+            if getattr(story_state, "character_relationships", None):
+                rels = [
+                    f"{r.source_char} <-> {r.target_char} ({r.relation_type}, Affinity={r.affinity_score}/10, Dynamic='{r.dynamic_status}')"
+                    for r in story_state.character_relationships[:4]
+                ]
+                if rels:
+                    kg_lines.append(f"* Active Relationships & Social Dynamics: {'; '.join(rels)}")
+            if getattr(story_state, "foreshadowing_clues", None):
+                curr_num = chapter_beat.chapter_number
+                due = [c for c in story_state.foreshadowing_clues if c.status in ["planted", "escalated"] and c.target_payoff_chapter == curr_num]
+                active = [c for c in story_state.foreshadowing_clues if c.status in ["planted", "escalated"] and c.target_payoff_chapter != curr_num]
+                if due:
+                    due_desc = "; ".join([f"'{d.name}' ({d.description})" for d in due])
+                    kg_lines.append(f"* MANDATORY CLUE PAYOFFS FOR THIS CHAPTER: Resolve or expose: {due_desc}")
+                if active:
+                    active_desc = "; ".join([f"'{a.name}' (Planted Ch.{a.planted_chapter}, due Ch.{a.target_payoff_chapter})" for a in active[:3]])
+                    kg_lines.append(f"* Active Background Suspense Hooks: {active_desc}")
             if getattr(story_state, "epistemic_secrets", None):
                 secr = [
                     f"'{s.get('fact')}': known to {s.get('known_by')}, HIDDEN from {s.get('hidden_from')}"
@@ -66,6 +83,16 @@ Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revis
         running_chapter_context = ""
         total_sub_beats = len(chapter_beat.sub_beats)
 
+        genre_voice_guide = ""
+        if world_bible.genre in ["psychology_of_money", "money_psychology", "behavioral_finance"] or "psychology" in world_bible.genre.lower() or "psychology" in world_bible.title.lower():
+            genre_voice_guide = """
+* **Narrative Non-Fiction Voice (Morgan Housel Style):**
+  - Channel the masterly, story-driven, observational voice of Morgan Housel (*The Psychology of Money*).
+  - Open with or center upon a vivid historical parable, character contrast, or real-world case study.
+  - Emphasize human behavior over spreadsheet math: ego, envy, patience, compounding, and sovereignty over time.
+  - Deliver timeless, counter-intuitive psychological insights with crisp, punchy prose.
+"""
+
         print(f"  [Agent: Prose Drafter] Drafting Chapter {chapter_beat.chapter_number}: {chapter_beat.title} ({total_sub_beats} sub-beats)...")
 
         for idx, sub_beat in enumerate(chapter_beat.sub_beats, start=1):
@@ -81,6 +108,7 @@ Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revis
 
 **Context Guidelines (The Codex):**
 * **Genre Style Guide:** Genre={world_bible.genre.upper()}. Setting={world_bible.setting_overview}. World Rules={[r.rule_name + ': ' + r.narrative_consequence for r in world_bible.rules[:3]]}
+{genre_voice_guide}
 * **Active Characters:**
 {char_voices}
 * **Dynamic Knowledge Graph & State:**

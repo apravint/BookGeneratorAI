@@ -45,6 +45,23 @@ class MasterOutlinerAgent:
                         "DILEMMA_CALCULATION",
                         "PIVOTAL_DECISION"
                     ]
+                elif world_bible.genre in ["psychology_of_money", "money_psychology", "behavioral_finance"] or "psychology" in world_bible.genre.lower() or "psychology" in world_bible.title.lower():
+                    section_titles = [
+                        "The Human Parable (Historical Case & Narrative Hook)",
+                        "The Behavioral Mechanism (The Psychological Principle)",
+                        "The Counter-Intuitive Paradox (Ego vs Reality)",
+                        "Empirical Contrast (The Two Financial Mindsets)",
+                        "The Margin of Safety (Defensive Wisdom & Staying Power)",
+                        "The Timeless Takeaway (Mental Model for Freedom & Peace)"
+                    ]
+                    beat_types = [
+                        "PARABLE_HOOK",
+                        "PSYCHOLOGICAL_PRINCIPLE",
+                        "COUNTER_INTUITIVE_PARADOX",
+                        "CONTRASTING_CASE_STUDY",
+                        "MARGIN_OF_SAFETY",
+                        "TIMELESS_TAKEAWAY"
+                    ]
                 elif world_bible.genre == "fiction" or "fiction" in world_bible.genre.lower():
                     section_titles = [
                         "The Inciting Spark",

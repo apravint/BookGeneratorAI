@@ -12,6 +12,8 @@ class BookBlueprint:
 
     def _detect_genre(self, genre: str, title: str) -> str:
         g = genre.lower().strip()
+        if g in ["psychology_of_money", "money_psychology", "behavioral_finance", "wealth_psychology"]:
+            return "psychology_of_money"
         if g in ["tamil_historical", "historical_tamil", "வரலாறு", "வரலாற்று_நாவல்"]:
             return "tamil_historical"
         if g in ["tamil_kavithai", "kavithai", "கவிதை", "கவிதைகள்"]:
@@ -33,6 +35,8 @@ class BookBlueprint:
 
         # Auto-detect from title keywords
         t = title.lower()
+        if any(w in t for w in ["psychology of money", "psychology of wealth", "psychology of finance", "behavioral wealth", "mind over money", "money mindset", "art of wealth"]):
+            return "psychology_of_money"
         if any(w in t for w in ["சோழன்", "பாண்டியன்", "சேரன்", "பொன்னியின்", "வேள்பாரி", "வரலாறு", "காவியம்", "தஞ்சாவூர்"]):
             return "tamil_historical"
         if any(w in t for w in ["கவிதை", "கவிதைகள்", "காவியம்", "பாடல்"]):
@@ -51,7 +55,9 @@ class BookBlueprint:
         return "non-fiction"
 
     def _generate_blueprint(self):
-        if self.genre == "tamil_historical":
+        if self.genre == "psychology_of_money":
+            return self._generate_psychology_of_money_blueprint()
+        elif self.genre == "tamil_historical":
             return self._generate_tamil_historical_blueprint()
         elif self.genre == "tamil_kavithai":
             return self._generate_tamil_kavithai_blueprint()
@@ -629,6 +635,90 @@ class BookBlueprint:
                         "number": 12,
                         "title": "The Lasting Legacy & Synthesis",
                         "focus": "Comprehensive summary, lasting legacy, final reflections, and future outlook."
+                    }
+                ]
+            }
+        ]
+
+    def _generate_psychology_of_money_blueprint(self):
+        return [
+            {
+                "part": "Part I: The Mind and the Ledger (Ego, Luck & Perception)",
+                "chapters": [
+                    {
+                        "number": 1,
+                        "title": "No One Is Crazy: The Invisible Lens of Experience",
+                        "focus": "How different eras, generations, and economic backgrounds shape financial minds; why your worldview of risk makes complete sense to you and completely baffles everyone else."
+                    },
+                    {
+                        "number": 2,
+                        "title": "The Asymmetry of Luck and Risk",
+                        "focus": "Nothing is as good or as bad as it seems. Random chance drives outsized outcomes; why acknowledging luck protects you from arrogance, and acknowledging risk protects you from despair."
+                    },
+                    {
+                        "number": 3,
+                        "title": "The Paradox of Never Enough",
+                        "focus": "When wealth becomes an infinite treadmill; the danger of moving goalposts, the toxicity of social comparison, and why knowing what is 'enough' is the ultimate financial superpower."
+                    }
+                ]
+            },
+            {
+                "part": "Part II: The Mechanics of Quiet Wealth (Compounding, Survival & Tails)",
+                "chapters": [
+                    {
+                        "number": 4,
+                        "title": "Confounding Compounding: The Miracle of Time",
+                        "focus": "Why patience performs mathematical miracles. The counter-intuitive nature of exponential growth, and why Warren Buffett's real superpower is not investment brilliance, but unbroken longevity."
+                    },
+                    {
+                        "number": 5,
+                        "title": "Getting Wealthy vs. Staying Wealthy",
+                        "focus": "Making money requires taking risks, optimism, and aggressive initiative; keeping money requires paranoia, humility, frugality, and the survival instinct to never get wiped out."
+                    },
+                    {
+                        "number": 6,
+                        "title": "Tails, You Win: The Power Law of Life and Markets",
+                        "focus": "Why a microscopic fraction of decisions, investments, and events drive 99% of total returns. You can be wrong half the time and still achieve extraordinary wealth."
+                    }
+                ]
+            },
+            {
+                "part": "Part III: The True Dividend of Wealth (Autonomy, Invisibility & Restraint)",
+                "chapters": [
+                    {
+                        "number": 7,
+                        "title": "Freedom: The Highest Form of Wealth",
+                        "focus": "The ultimate dividend of money is control over your time. The ability to wake up every morning and say 'I can do whatever I want today' is the single greatest determinant of human happiness."
+                    },
+                    {
+                        "number": 8,
+                        "title": "The Man in the Car Paradox",
+                        "focus": "Nobody is impressed by your luxury possessions as much as you are. People buy expensive goods hoping for admiration, but onlookers only imagine themselves possessing them."
+                    },
+                    {
+                        "number": 9,
+                        "title": "Wealth Is What You Don't See",
+                        "focus": "Spending money to show people you have money is the fastest way to have less money. True wealth is unspent cash, unbought cars, unexercised leverage, and financial optionality."
+                    }
+                ]
+            },
+            {
+                "part": "Part IV: The Modern Playbook (Reasonability, Room for Error & Compounding Optimism)",
+                "chapters": [
+                    {
+                        "number": 10,
+                        "title": "Save Without a Goal: Cash as Emotional Insurance",
+                        "focus": "Why saving money does not require a specific purchase target. Savings is simply the gap between your ego and your income; cash reserves provide the priceless luxury of independence and sleep."
+                    },
+                    {
+                        "number": 11,
+                        "title": "Reasonable Beats Rational: Sleeping Well at Night",
+                        "focus": "Human beings are not cold mathematical spreadsheets. A financial strategy that is psychologically reasonable and lets you sleep at night beats a hyper-rational formula that causes panic during a crash."
+                    },
+                    {
+                        "number": 12,
+                        "title": "The Seduction of Pessimism",
+                        "focus": "Why doom sounds intellectual and warnings capture attention, while optimism sounds like a sales pitch. Why destruction happens in minutes while progress compounds silently across decades."
                     }
                 ]
             }

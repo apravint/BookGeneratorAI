@@ -9,6 +9,7 @@ import argparse
 import os
 import sys
 import glob
+from pathlib import Path
 from generator.llm_client import LlmClient
 from memory.state_manager import StateManager
 from schemas.models import StoryState
@@ -18,6 +19,7 @@ from agents.master_outliner import MasterOutlinerAgent
 from agents.prose_drafter import ProseDrafterAgent
 from agents.critics import MasterAdversarialReviewer
 from tools.file_writer import FileWriterTool
+from tools.card_manager import CardManager
 
 
 def reset_environment(db_path: str = "memory/book_state.db", output_dir: str = "output"):
@@ -57,6 +59,8 @@ def main():
     parser.add_argument("--output", "-o", default="Generated_Book.docx", help="Output .docx file path")
     parser.add_argument("--epub", default=None, help="Output .epub file path (default: auto-named from output)")
     parser.add_argument("--reset", "-r", action="store_true", help="Reset state database and output directory before run")
+    parser.add_argument("--export-cards", default=None, help="Directory to export portable character cards and lorebook JSON (MuMu style)")
+    parser.add_argument("--import-lorebook", default=None, help="Path to pre-existing lorebook JSON pack to import World Bible & Characters from")
 
     args = parser.parse_args()
 
@@ -106,17 +110,28 @@ def main():
     # 2. PHASE 1: Foundation (Architect Agents)
     print("PHASE 1: Foundation Setup (Architect Agents)...")
     
-    world_builder = WorldBuilderAgent(llm_client)
-    print("  [Agent: World Builder] Generating structured World Bible...")
-    world_bible = world_builder.build_world(seed_title=args.title, seed_concept=concept, genre=args.genre, language=language)
-    state_mgr.save_world_bible(world_bible)
-    print(f"  ✓ World Bible Created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined, Language: {world_bible.language}).")
+    if args.import_lorebook and os.path.exists(args.import_lorebook):
+        print(f"  [Lorebook Import] Loading World Bible and Characters from '{args.import_lorebook}'...")
+        world_bible, character_registry, imported_relations = CardManager.import_lorebook(args.import_lorebook)
+        state_mgr.save_world_bible(world_bible)
+        state_mgr.save_character_registry(character_registry)
+        init_state = state_mgr.get_story_state()
+        if imported_relations:
+            init_state.character_relationships.extend(imported_relations)
+            state_mgr.save_story_state(init_state)
+        print(f"  ✓ Imported: '{world_bible.title}', {len(character_registry.characters)} characters, {len(imported_relations)} relations.")
+    else:
+        world_builder = WorldBuilderAgent(llm_client)
+        print("  [Agent: World Builder] Generating structured World Bible...")
+        world_bible = world_builder.build_world(seed_title=args.title, seed_concept=concept, genre=args.genre, language=language)
+        state_mgr.save_world_bible(world_bible)
+        print(f"  ✓ World Bible Created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined, Language: {world_bible.language}).")
 
-    char_architect = CharacterArchitectAgent(llm_client)
-    print("  [Agent: Character Architect] Developing Character Registry & Voice Fingerprints...")
-    character_registry = char_architect.build_characters(world_bible, author_name=args.author, language=language)
-    state_mgr.save_character_registry(character_registry)
-    print(f"  ✓ Character Registry Created: {len(character_registry.characters)} characters initialized.")
+        char_architect = CharacterArchitectAgent(llm_client)
+        print("  [Agent: Character Architect] Developing Character Registry & Voice Fingerprints...")
+        character_registry = char_architect.build_characters(world_bible, author_name=args.author, language=language)
+        state_mgr.save_character_registry(character_registry)
+        print(f"  ✓ Character Registry Created: {len(character_registry.characters)} characters initialized.")
 
     outliner = MasterOutlinerAgent(llm_client)
     print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
@@ -229,6 +244,23 @@ def main():
         print(f"🎉 SUCCESS: Commercial EPUB 3 Edition compiled: {os.path.abspath(epub_output)}")
     except Exception as ex:
         print(f"  ⚠️ [EPUB Compilation Warning]: {ex}")
+
+    # Portable Lorebook & Character Cards Export (MuMu style)
+    if args.export_cards:
+        print(f"\n  [Lorebook Export] Exporting Character Cards and Lorebook to '{args.export_cards}'...")
+        cards_dir = Path(args.export_cards)
+        cards_dir.mkdir(parents=True, exist_ok=True)
+        for char in character_registry.characters:
+            char_card_file = cards_dir / f"{char.character_id}_{char.name.replace(' ', '_')}.json"
+            CardManager.export_character_card(char, char_card_file)
+        final_story_state = state_mgr.get_story_state()
+        CardManager.export_lorebook(
+            bible=world_bible,
+            registry=character_registry,
+            relationships=final_story_state.character_relationships if hasattr(final_story_state, 'character_relationships') else None,
+            output_path=cards_dir / "lorebook.json"
+        )
+        print(f"  ✓ Exported {len(character_registry.characters)} character cards & lorebook.json to '{args.export_cards}'.")
 
     print("=" * 80 + "\n")
 

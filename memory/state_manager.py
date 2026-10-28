@@ -6,13 +6,15 @@ Maintains World Bible, Character Registries, Master Outline, and Story State acr
 import json
 import sqlite3
 import os
-from typing import Optional
+from typing import Optional, List, Dict
 from schemas.models import (
     WorldBible,
     CharacterRegistry,
     MasterOutline,
     StoryState,
-    RevisionBrief
+    RevisionBrief,
+    ForeshadowingClue,
+    CharacterRelation
 )
 
 
@@ -137,6 +139,120 @@ class StateManager:
 
         self.save_story_state(story_state)
         return story_state
+
+    # ---------------------------------------------------------
+    # Foreshadowing & Clue Tracking (MuMuAINovel inspired)
+    # ---------------------------------------------------------
+    def add_foreshadowing_clue(self, story_state: StoryState, clue: ForeshadowingClue) -> StoryState:
+        """Adds or updates a foreshadowing clue in the story state."""
+        existing = next((c for c in story_state.foreshadowing_clues if c.clue_id == clue.clue_id), None)
+        if existing:
+            story_state.foreshadowing_clues = [
+                clue if c.clue_id == clue.clue_id else c for c in story_state.foreshadowing_clues
+            ]
+        else:
+            story_state.foreshadowing_clues.append(clue)
+        self.save_story_state(story_state)
+        return story_state
+
+    def get_active_clues(self, story_state: StoryState) -> List[ForeshadowingClue]:
+        """Returns all clues that are currently planted or escalated (unresolved)."""
+        return [c for c in story_state.foreshadowing_clues if c.status in ["planted", "escalated"]]
+
+    def get_due_clues(self, story_state: StoryState, current_chapter: int) -> List[ForeshadowingClue]:
+        """Returns clues scheduled for payoff or climax in or before the current chapter."""
+        return [
+            c for c in story_state.foreshadowing_clues
+            if c.status in ["planted", "escalated"] and c.target_payoff_chapter <= current_chapter
+        ]
+
+    def resolve_foreshadowing_clue(
+        self,
+        story_state: StoryState,
+        clue_id: str,
+        resolution_notes: str = ""
+    ) -> StoryState:
+        """Marks a clue as resolved with payoff notes."""
+        for clue in story_state.foreshadowing_clues:
+            if clue.clue_id == clue_id or clue.name.lower() == clue_id.lower():
+                clue.status = "resolved"
+                if resolution_notes:
+                    clue.payoff_notes = resolution_notes
+        self.save_story_state(story_state)
+        return story_state
+
+    # ---------------------------------------------------------
+    # Dynamic Character & Entity Relationships
+    # ---------------------------------------------------------
+    def update_character_relation(
+        self,
+        story_state: StoryState,
+        source_char: str,
+        target_char: str,
+        relation_type: str = "acquaintance",
+        affinity_score: int = 0,
+        dynamic_status: str = "Neutral dynamic"
+    ) -> StoryState:
+        """Records or updates dynamic affinity and social tension between two characters."""
+        updated = False
+        for rel in story_state.character_relationships:
+            if (rel.source_char.lower() == source_char.lower() and rel.target_char.lower() == target_char.lower()) or \
+               (rel.source_char.lower() == target_char.lower() and rel.target_char.lower() == source_char.lower()):
+                rel.relation_type = relation_type
+                rel.affinity_score = max(-10, min(10, affinity_score))
+                rel.dynamic_status = dynamic_status
+                updated = True
+                break
+        if not updated:
+            story_state.character_relationships.append(
+                CharacterRelation(
+                    source_char=source_char,
+                    target_char=target_char,
+                    relation_type=relation_type,
+                    affinity_score=max(-10, min(10, affinity_score)),
+                    dynamic_status=dynamic_status
+                )
+            )
+        self.save_story_state(story_state)
+        return story_state
+
+    def get_character_relationships(
+        self,
+        story_state: StoryState,
+        char_name: str
+    ) -> List[CharacterRelation]:
+        """Returns all relationships involving a specific character."""
+        name_lower = char_name.lower()
+        return [
+            rel for rel in story_state.character_relationships
+            if rel.source_char.lower() == name_lower or rel.target_char.lower() == name_lower
+        ]
+
+    # ---------------------------------------------------------
+    # Non-Linear Chapter DAG & Invalidation
+    # ---------------------------------------------------------
+    def get_downstream_chapters(self, outline: MasterOutline, modified_chapter: int) -> List[int]:
+        """Identifies all chapters that depend on or follow the modified chapter in the causal DAG."""
+        downstream = set()
+        queue = [modified_chapter]
+        while queue:
+            curr = queue.pop(0)
+            for chap in outline.chapters:
+                if curr in getattr(chap, "prerequisite_chapters", []) and chap.chapter_number not in downstream:
+                    downstream.add(chap.chapter_number)
+                    queue.append(chap.chapter_number)
+        return sorted(list(downstream))
+
+    def invalidate_chapter(self, chapter_number: int) -> bool:
+        """Deletes a chapter revision record to allow clean regeneration."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM chapter_revisions WHERE chapter_number = ?", (chapter_number,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
 
     def _save_key(self, key: str, json_str: str):
         conn = sqlite3.connect(self.db_path)

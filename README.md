@@ -23,6 +23,10 @@ Standard LLM wrappers fail catastrophically when tasked with long-form writing:
 ### The Architectural Solution
 `BookGeneratorAI` implements an enterprise-grade multi-agent architecture featuring:
 - **Hierarchical State Isolation & Dynamic Knowledge Graph**: The drafting agent receives *only* the current scene micro-beat, active character living state, epistemic rules, active plot loops, and a rolling memory summary—never the full 80,000-word history.
+- **Foreshadowing & Clue Tracking Engine**: Tracks planted narrative clues, suspense hooks, and target payoff chapters. Audits chapters so scheduled payoffs are never omitted or prematurely revealed.
+- **Dynamic Character Relationship Network**: Models evolving interpersonal tension, alliances, debts, and affinity scores (-10 to +10) that adapt dynamically as dramatic beats resolve.
+- **Portable Lorebooks & Character Cards**: Import and export standardized Character Cards and World Lorebooks (JSON/Markdown) across books and projects via `CardManager`.
+- **Causal Chapter DAG & Surgical Invalidation**: Models chapter-to-chapter dependencies to allow surgical regeneration of specific chapters and downstream story branches without corrupting unrelated arcs.
 - **Scene & Sequel Dramatic Beat Sheets**: Chapters are decomposed into 6 micro-beats adhering to Dwight Swain's dramatic patterns (Goal → Conflict → Disaster Reversal → Emotional Reaction → Dilemma → Pivotal Decision) with explicit micro-tension curves (1-10) and internal POV subtext.
 - **Gary Provost Sentence Cadence & Deep POV Engine**: The adversarial critic intercepts repetitive mid-length sentence runs (the 15-word AI drone), enforces staccato (<5 words) and sweeping (>26 words) variety, and purges perceptual filter words ("she noticed that", "he felt that").
 - **Commercial Dual-Format Compilation**: Compiles simultaneously to luxury trade **DOCX** with custom palettes and callouts, and validated **EPUB 3** with responsive typography, drop caps, and semantic navigation ready for Amazon KDP and Apple Books.

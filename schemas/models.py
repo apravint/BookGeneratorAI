@@ -90,6 +90,26 @@ class CharacterCondition(BaseModel):
     current_location: str = Field(default="Unknown", description="Current whereabouts")
 
 
+class CharacterRelation(BaseModel):
+    source_char: str = Field(..., description="Source character name or ID")
+    target_char: str = Field(..., description="Target character name or ID")
+    relation_type: str = Field(default="acquaintance", description="Type of relationship: ally, rival, confidant, debtor, betrayer, secret_ally, kin")
+    affinity_score: int = Field(default=0, ge=-10, le=10, description="Affinity score: -10 (hostile) to +10 (devoted)")
+    dynamic_status: str = Field(default="Neutral dynamic", description="Contextual narrative dynamic description")
+
+
+class ForeshadowingClue(BaseModel):
+    clue_id: str = Field(default="clue_01", description="Unique identifier for clue or suspense hook")
+    name: str = Field(default="Unresolved Hook", description="Brief name or label for the clue")
+    description: str = Field(default="", description="Detailed explanation of the planted clue")
+    planted_chapter: int = Field(default=1, description="Chapter where clue is introduced")
+    planted_beat: str = Field(default="1.1", description="Sub-beat section where clue was dropped")
+    target_payoff_chapter: int = Field(default=5, description="Scheduled chapter of revelation or climax")
+    status: str = Field(default="planted", description="Status: 'planted', 'escalated', 'resolved', 'abandoned'")
+    involved_characters: List[str] = Field(default_factory=list, description="Characters aware of or affected by clue")
+    payoff_notes: str = Field(default="", description="Resolution details when resolved")
+
+
 class SubBeat(BaseModel):
     section_number: str = Field(default="1.1", description="Section number")
     scene_objective: str = Field(default="Execute core scene goal", description="Scene goal")
@@ -110,6 +130,9 @@ class ChapterBeat(BaseModel):
     core_narrative_arc: str = Field(default="Chapter narrative trajectory", description="Narrative arc")
     sub_beats: List[SubBeat] = Field(default_factory=list, description="6 sub-section beats")
     target_word_count: int = Field(default=3500, description="Target word count")
+    prerequisite_chapters: List[int] = Field(default_factory=list, description="IDs of chapters that causally precede or influence this chapter")
+    foreshadowing_clues_to_plant: List[str] = Field(default_factory=list, description="Clue labels scheduled to be dropped in this chapter")
+    foreshadowing_clues_to_resolve: List[str] = Field(default_factory=list, description="Clue labels scheduled to pay off in this chapter")
 
 
 class MasterOutline(BaseModel):
@@ -150,3 +173,5 @@ class StoryState(BaseModel):
     character_conditions: Dict[str, CharacterCondition] = Field(default_factory=dict, description="Detailed physical/emotional inventory tracker")
     epistemic_secrets: List[Dict[str, Any]] = Field(default_factory=list, description="Secrets known vs hidden among characters")
     key_discoveries: List[str] = Field(default_factory=list, description="Key discoveries")
+    foreshadowing_clues: List[ForeshadowingClue] = Field(default_factory=list, description="Master foreshadowing, suspense and clue tracker")
+    character_relationships: List[CharacterRelation] = Field(default_factory=list, description="Dynamic character relationship network")

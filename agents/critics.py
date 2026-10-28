@@ -77,6 +77,41 @@ class ContinuityEditorAgent:
                                 description=f"Character '{unaware_char}' revealed secret '{fact}' before learning it.",
                                 remedy=f"Ensure '{unaware_char}' does not possess or speak of '{fact}' until revealed."
                             ))
+
+        # Foreshadowing payoff audit (MuMuAINovel inspired)
+        if story_state and hasattr(story_state, "foreshadowing_clues"):
+            text_lower = chapter_text.lower()
+            for clue in story_state.foreshadowing_clues:
+                if clue.status in ["planted", "escalated"] and clue.target_payoff_chapter == chapter_number:
+                    # Check if clue name or description keywords are addressed
+                    keywords = [w.lower() for w in clue.name.split() if len(w) > 3]
+                    addressed = any(kw in text_lower for kw in keywords) or (clue.name.lower() in text_lower)
+                    if not addressed:
+                        issues.append(ContinuityIssue(
+                            severity="MAJOR",
+                            location=f"Chapter {chapter_number}",
+                            description=f"Scheduled foreshadowing payoff omitted: Clue '{clue.name}' was due in Chapter {chapter_number}.",
+                            remedy=f"Incorporate the revelation or escalation of '{clue.name}': {clue.description}"
+                        ))
+
+        # Relationship dynamic consistency check
+        if story_state and hasattr(story_state, "character_relationships"):
+            for rel in story_state.character_relationships:
+                # If characters have intense enmity (-7 or lower)
+                if rel.affinity_score <= -7:
+                    c1, c2 = rel.source_char.lower(), rel.target_char.lower()
+                    if c1 in chapter_text.lower() and c2 in chapter_text.lower():
+                        # Look for inappropriate casual terms of endearment between mortal enemies
+                        sweet_terms = ["darling", "sweetheart", "my beloved", "best friend", "my dearest"]
+                        for term in sweet_terms:
+                            if term in chapter_text.lower():
+                                issues.append(ContinuityIssue(
+                                    severity="MAJOR",
+                                    location=f"Chapter {chapter_number}",
+                                    description=f"Hostile relationship contradiction: {rel.source_char} and {rel.target_char} have affinity {rel.affinity_score}/10 ('{rel.dynamic_status}'), but text includes unearned affectionate term '{term}'.",
+                                    remedy="Maintain hostile tension or explain the deceptive pretense."
+                                ))
+                                break
         return issues
 
 

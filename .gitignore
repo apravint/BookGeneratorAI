@@ -3,6 +3,10 @@ __pycache__/
 memory/book_state.db
 output/
 *.docx
+*.epub
+*.png
+*.jpg
+*.jpeg
 *.log
 .DS_Store
 .vscode/
