@@ -14,14 +14,17 @@ from schemas.models import (
     StoryState,
     RevisionBrief,
     ForeshadowingClue,
-    CharacterRelation
+    CharacterRelation,
+    ChapterMemory
 )
+from generator.json_parser import generate_validated, StructuredOutputError
+from prompts.system_prompts import language_directive
 
 
 class StateManager:
     def __init__(self, db_path: str = "memory/book_state.db"):
         self.db_path = db_path
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self._init_db()
 
     def _init_db(self):
@@ -140,38 +143,92 @@ class StateManager:
         language: str = "english"
     ) -> StoryState:
         """Parses chapter events to update rolling summary, open plot loops, and character states."""
-        is_tamil = language and language.lower() in ["tamil", "ta"]
-        summary = f"- Chapter {chapter_number} ({chapter_title}): Narrative progressed through assigned beats."
-        
+        memory = None
         if llm_client:
-            prompt = (
-                f"Analyze Chapter {chapter_number}: {chapter_title}.\n"
-                f"1. Provide a concise 2-sentence narrative recap.\n"
-                f"2. List any newly opened plot loops or unresolved questions.\n\n"
-                f"Text excerpt:\n{chapter_text[:1800]}"
-            )
-            system = "You are a narrative continuity engine. Keep responses concise."
-            try:
-                response = llm_client.generate_text(prompt, system_prompt=system, max_tokens=300)
-                summary = response.strip()
-            except Exception:
-                pass
+            memory = self._extract_chapter_memory(story_state, chapter_number, chapter_title, chapter_text, llm_client, language)
 
-        # Update rolling summary
-        story_state.story_so_far_summary += f"\n- Chapter {chapter_number} ({chapter_title}): {summary}"
+        if memory:
+            self._apply_chapter_memory(story_state, memory)
+            recap = memory.recap
+        else:
+            recap = "Narrative progressed through assigned beats."
+            # Track active plot thread
+            thread_label = f"Ch.{chapter_number} fallout: {chapter_title}"
+            if thread_label not in story_state.active_plot_threads:
+                story_state.active_plot_threads.append(thread_label)
+
+        story_state.chapter_recaps[chapter_number] = recap
+        story_state.story_so_far_summary += f"\n- Chapter {chapter_number} ({chapter_title}): {recap}"
         story_state.current_chapter = chapter_number
-
-        # Track active plot thread
-        thread_label = f"Ch.{chapter_number} fallout: {chapter_title}"
-        if thread_label not in story_state.active_plot_threads:
-            story_state.active_plot_threads.append(thread_label)
-            # Cap active threads to avoid prompt bloat
-            if len(story_state.active_plot_threads) > 6:
-                retired = story_state.active_plot_threads.pop(0)
-                story_state.resolved_plot_threads.append(retired)
 
         self.save_story_state(story_state)
         return story_state
+
+    def _extract_chapter_memory(self, story_state, chapter_number, chapter_title, chapter_text, llm_client, language) -> Optional[ChapterMemory]:
+        open_clues = [c.name for c in story_state.foreshadowing_clues if c.status in ["planted", "escalated"]]
+        prompt = f"""TASK: chapter memory
+Extract what must be remembered from Chapter {chapter_number}: {chapter_title}.
+{language_directive(language)}
+Open setups you may mark escalated or resolved, using these exact names: {open_clues}
+Currently open threads: {story_state.active_plot_threads}
+
+FULL CHAPTER:
+{chapter_text}
+
+Return ONLY JSON:
+{{"recap": "3-5 sentences: what happened and what changed",
+ "opened_threads": [], "closed_threads": [],
+ "character_conditions": [{{"character_name": "", "physical_wounds_or_status": [], "inventory_items": [], "emotional_state": "", "current_location": ""}}],
+ "relationships": [{{"source_char": "", "target_char": "", "relation_type": "", "affinity_score": 0, "dynamic_status": ""}}],
+ "clues_escalated": [], "clues_resolved": [],
+ "secrets": [{{"fact": "", "known_by": [], "hidden_from": []}}],
+ "discoveries": []}}
+"""
+        system = "You are a narrative continuity engine. Record only what the text establishes. Never guess."
+        validator = lambda m: None if m.recap.strip() else "The recap is empty."
+        try:
+            return generate_validated(llm_client, prompt, system, ChapterMemory, validator=validator, max_tokens=3000)
+        except StructuredOutputError as e:
+            print(f"  [Memory Engine Warning] Structured memory unavailable for Chapter {chapter_number}: {e}")
+            return None
+
+    def _apply_chapter_memory(self, story_state: StoryState, memory: ChapterMemory):
+        for thread in memory.closed_threads:
+            if thread in story_state.active_plot_threads:
+                story_state.active_plot_threads.remove(thread)
+                story_state.resolved_plot_threads.append(thread)
+        for thread in memory.opened_threads:
+            if thread not in story_state.active_plot_threads:
+                story_state.active_plot_threads.append(thread)
+        for condition in memory.character_conditions:
+            story_state.character_conditions[condition.character_name] = condition
+        for rel in memory.relationships:
+            self._merge_relation(story_state, rel)
+        for clue in story_state.foreshadowing_clues:
+            if clue.name in memory.clues_resolved:
+                clue.status = "resolved"
+            elif clue.name in memory.clues_escalated and clue.status == "planted":
+                clue.status = "escalated"
+        known = {s.get("fact") for s in story_state.epistemic_secrets}
+        story_state.epistemic_secrets.extend(s for s in memory.secrets if s.get("fact") and s.get("fact") not in known)
+        story_state.key_discoveries.extend(d for d in memory.discoveries if d not in story_state.key_discoveries)
+
+    @staticmethod
+    def _merge_relation(story_state: StoryState, relation: CharacterRelation):
+        pair = {relation.source_char.lower(), relation.target_char.lower()}
+        for i, existing in enumerate(story_state.character_relationships):
+            if {existing.source_char.lower(), existing.target_char.lower()} == pair:
+                story_state.character_relationships[i] = relation
+                return
+        story_state.character_relationships.append(relation)
+
+    def save_json(self, key: str, value) -> None:
+        """Stores a checkpoint such as in-progress scenes or the book brief."""
+        self._save_key(key, json.dumps(value, ensure_ascii=False))
+
+    def load_json(self, key: str, default=None):
+        data = self._get_key(key)
+        return json.loads(data) if data else default
 
     # ---------------------------------------------------------
     # Foreshadowing & Clue Tracking (MuMuAINovel inspired)

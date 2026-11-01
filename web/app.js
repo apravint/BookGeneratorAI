@@ -281,7 +281,7 @@ async function switchChapter(num) {
   contentBox.innerHTML = `<div class="empty-state"><i class="fa-solid fa-spinner fa-spin empty-icon"></i><h4>அத்தியாயம் ${num} ஏற்றப்படுகிறது...</h4></div>`;
 
   try {
-    const res = await fetch(`/api/chapters/${num}`);
+    const res = await fetch(`/api/chapters/${num}?job_id=${encodeURIComponent(currentJobId || "")}`);
     const data = await res.json();
 
     if (data.content) {

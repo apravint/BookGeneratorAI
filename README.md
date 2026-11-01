@@ -8,7 +8,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![AGENTS.md](https://img.shields.io/badge/AI--Standards-AGENTS.md-blueviolet.svg)](AGENTS.md)
 
-**BookGenerator AI** is an open-source, production-grade multi-agent engine engineered to solve the hardest challenge in generative AI: **autonomously drafting complete, publication-ready 300-page commercial manuscripts (80,000+ words) without context collapse or prose degradation.**
+**BookGenerator AI** is an open-source multi-agent engine that plans, drafts, edits and packages full-length books (80,000 words by default), then tells you honestly whether each one is ready.
+
+> **What it can and cannot promise.** The engine aims for the craft of commercial publishing, and refuses to call a book ready until it passes measurable and editorial checks. No software can guarantee sales. Readers buy on concept, cover, reviews and marketing too, and final quality still depends on your concept, your chosen model, and the human editing listed in every book's release report.
 
 ---
 
@@ -29,7 +31,7 @@ Standard LLM wrappers fail catastrophically when tasked with long-form writing:
 - **Causal Chapter DAG & Surgical Invalidation**: Models chapter-to-chapter dependencies to allow surgical regeneration of specific chapters and downstream story branches without corrupting unrelated arcs.
 - **Scene & Sequel Dramatic Beat Sheets**: Chapters are decomposed into 6 micro-beats adhering to Dwight Swain's dramatic patterns (Goal → Conflict → Disaster Reversal → Emotional Reaction → Dilemma → Pivotal Decision) with explicit micro-tension curves (1-10) and internal POV subtext.
 - **Gary Provost Sentence Cadence & Deep POV Engine**: The adversarial critic intercepts repetitive mid-length sentence runs (the 15-word AI drone), enforces staccato (<5 words) and sweeping (>26 words) variety, and purges perceptual filter words ("she noticed that", "he felt that").
-- **Commercial Dual-Format Compilation**: Compiles simultaneously to luxury trade **DOCX** with custom palettes and callouts, and validated **EPUB 3** with responsive typography, drop caps, and semantic navigation ready for Amazon KDP and Apple Books.
+- **Dual-Format Compilation**: Compiles to a 6x9 print interior **DOCX** with mirrored margins, running heads and a live table of contents, and an **EPUB 3** with semantic navigation. Run EPUBCheck and your retailer's previewer before upload.
 
 ---
 
@@ -65,7 +67,7 @@ Standard LLMs default to generic clichés and preachy summary endings. `BookGene
                                     ▼
                        ┌─────────────────────────┐
                        │ Master Outliner Agent   │
-                       │ (4-Part, 12 Chapters)   │
+                       │ (Bespoke Book Plan)     │
                        └────────────┬────────────┘
                                     │
                                     ▼
@@ -100,20 +102,45 @@ Standard LLMs default to generic clichés and preachy summary endings. `BookGene
 ## 🔬 In-Depth Engineering & Edge-Case Handling
 
 ### 1. DeepSeek-R1 `<think>` Tag Sanitization
-Reasoning models like DeepSeek-R1 output extensive inner-monologue reasoning blocks (`<think>...</think>`) before generating response content. `LlmClient._clean_llm_output()` implements a robust multi-pass regex filter (`re.DOTALL`) that strips reasoning traces, conversational preambles (`"Okay, let's write..."`), and prompt meta-leakage without corrupting structured JSON schemas or Markdown prose headings.
+Reasoning models like DeepSeek-R1 output extensive inner-monologue reasoning blocks (`<think>...</think>`) before generating response content. `LlmClient._clean_llm_output()` strips reasoning traces and a leading meta preamble (`"Here is the scene:"`) while leaving real opening lines of prose intact.
 
 ### 2. SQLite State Persistence (`memory/state_manager.py`)
-To protect long-running generations (which can take 30–60 minutes locally), all intermediate states—`WorldBible`, `CharacterRegistry`, `MasterOutline`, chapter drafts, and critic revision briefs—are persisted transactionally to SQLite (`memory/book_state.db`). Interrupted runs can resume instantly without re-generating prior chapters.
+All intermediate state (brief, world, cast, outline, scenes as they are written, chapters and editor reports) is persisted to the book's own SQLite file (`books/<title>/state.db`). Interrupted runs resume at the next unwritten scene.
 
 ### 3. Circuit-Breaker Adversarial Loop
-To prevent infinite revision loops when an LLM struggles with a complex constraint, `MasterAdversarialReviewer` enforces strict revision bounds (`max-revisions`, default 1–2 passes). If a draft fails audit after max attempts, the system logs the residual warnings, applies non-blocking text cleanup, and safely advances state.
+To prevent infinite revision loops when an LLM struggles with a complex constraint, the revision loop is bounded by `--max-revisions`. If a chapter still fails, its strongest version is kept and the failure becomes a blocker in the release report.
+
+---
+
+## 🧭 What Happens to a Book
+
+| Phase | Agent | Output |
+|---|---|---|
+| 0 | Book Strategist | Target reader, promise, hook, ending, voice guide |
+| 1 | World Builder, Character Architect, Master Outliner | Bespoke world, cast and a book-specific chapter and scene plan with setups and payoffs |
+| 2 | Prose Drafter | Scene-by-scene prose; the book's first scene competes among several drafts |
+| 3 | Developmental Editor + mechanical critics | Rubric scores; only flagged scenes are rewritten, and the best version is kept |
+| 3 | Memory Engine | Recaps, threads, character state, relationships, secrets and clue status, read from the full chapter |
+| 4 | Book Reviewer | `release_report.md`: PASS or NOT READY with every blocker |
+| 5 | Publishing Kit | Store blurb, keywords, categories, cover brief, launch plan, 6x9 print DOCX, EPUB 3 |
+
+Non-fiction gets no invented cast. Uncertain facts are marked `[VERIFY: ...]`, and every checkable claim is listed in `fact_check.md`.
+
+Nothing is fabricated: no fake reviews, bestseller labels, prices or credentials. An ISBN, publisher, dedication or bio appears only if you supply it. If a model cannot produce valid output, the run stops instead of inserting stock content, and it resumes where it stopped.
+
+Each book lives in its own folder:
+
+```
+books/<title>/
+├── <title>.docx, <title>.epub
+├── manuscript/chapter_01.md ...
+├── publishing/release_report.md, listing.md, metadata.json, fact_check.md
+└── state.db
+```
 
 ---
 
 ## 🚀 Quick Start
-
-### 1. Prerequisites & Installation
-Ensure Python 3.10+ and [Ollama](https://ollama.com) are installed.
 
 ```bash
 git clone https://github.com/apravint/BookGeneratorAI.git
@@ -121,49 +148,26 @@ cd BookGeneratorAI
 pip install -r requirements.txt
 ```
 
-Ensure your target model is pulled in Ollama (e.g. DeepSeek-R1):
-```bash
-ollama pull deepseek-r1:latest
-```
+The concept matters more than any setting. Give it something specific and original:
 
-### 2. Basic Usage
-
-#### Generate a Full Fiction Novel (Offline via Local Ollama)
 ```bash
 python3 main.py \
-  --title "The Love Story" \
-  --genre fiction \
-  --author "Pravin Tamilan" \
-  --provider ollama \
-  --model "deepseek-r1:latest" \
-  --reset \
-  --output "The_Love_Story.docx"
+  --title "The Ledger of the Drowned" \
+  --concept "A river ferryman finds a waterlogged ledger recording every drowning in his town, including tomorrow's" \
+  --genre thriller \
+  --author "Your Name" \
+  --provider anthropic
 ```
 
-#### Generate a Non-Fiction Architecture Book
+Try two chapters first to judge quality before paying for a full book:
+
 ```bash
-python3 main.py \
-  --title "Building Distributed Stream Engines" \
-  --genre technical \
-  --author "Pravin Tamilan" \
-  --provider ollama \
-  --model "deepseek-r1:latest" \
-  --reset \
-  --output "Distributed_Streams.docx"
+python3 main.py -t "Sample Run" -c "Your concept" -n 2 --target-words 5000 --provider ollama
 ```
 
-#### Cloud LLM Providers (OpenAI, Gemini, Anthropic)
-```bash
-export OPENAI_API_KEY="your-api-key"
+Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` for cloud providers. Local models are free, but small ones will rarely clear the editorial bar. Run the same command again to resume.
 
-python3 main.py \
-  --title "The Exponential Leader" \
-  --genre business \
-  --author "Pravin Tamilan" \
-  --provider openai \
-  --model "gpt-4o" \
-  --output "Exponential_Leader.docx"
-```
+To add real endorsements, put permissioned quotes in `books/<title>/manuscript/praise.md`.
 
 ---
 
@@ -171,18 +175,25 @@ python3 main.py \
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
-| `--title` | `-t` | **Required** | Book title |
-| `--concept` | `-c` | `""` | Seed concept or story prompt |
-| `--language` | `-l` | `english` | Primary language (`tamil` / `english`) |
-| `--tamil` | | `False` | Preset flag for Tamil language book generation |
-| `--genre` | `-g` | `auto` | Genre (`tamil_historical`, `tamil_thirukkural`, `tamil_kavithai`, `tamil_fiction`, `fiction`, `business`) |
-| `--author` | `-a` | `Pravin Tamilan` | Author name for title page & headers |
-| `--provider` | `-p` | `ollama` | Provider (`ollama`, `gemini`, `openai`, `anthropic`, `jev`) |
-| `--model` | `-m` | `deepseek-r1:latest` | Target LLM model |
-| `--ollama-url` | | `http://localhost:11434` | Local Ollama REST endpoint |
-| `--reset` | `-r` | `False` | Clean database (`memory/book_state.db`) & previous outputs before running |
-| `--max-revisions` | | `1` | Max critic revision loops per chapter |
-| `--output` | `-o` | `Generated_Book.docx` | Output path for `.docx` compilation |
+| `--title` | `-t` | **Required** | Book title; also identifies the book's folder |
+| `--concept` | `-c` | title | Seed concept |
+| `--genre` | `-g` | `auto` | Genre, detected from the title when `auto` |
+| `--author` | `-a` | `Pravin Tamilan` | Author name |
+| `--language` | `-l` | `english` | `english` or `tamil` |
+| `--tamil` | | off | Shortcut for `--language tamil` |
+| `--provider` | `-p` | auto-detected | `ollama`, `gemini`, `openai`, `anthropic`, `jev` |
+| `--model` | `-m` | provider default | Model name |
+| `--ollama-url` | | `http://localhost:11434` | Ollama endpoint |
+| `--chapters` | `-n` | `24` | Number of chapters |
+| `--scenes-per-chapter` | | `4` | Scenes per chapter |
+| `--target-words` | | `80000` | Whole-book word target |
+| `--max-revisions` | | `2` | Revision passes per chapter |
+| `--opening-candidates` | | `3` | Competing drafts of the first scene |
+| `--output` / `--epub` | `-o` | book folder | Output paths |
+| `--cover` | | none | Cover `.jpg` for the EPUB |
+| `--subtitle` `--isbn` `--publisher` `--year` `--dedication` `--author-bio` | | none | Printed only when supplied |
+| `--reset` | `-r` | off | Restart this book only |
+| `--export-cards` / `--import-lorebook` | | none | Portable character cards and lorebooks |
 
 ---
 
@@ -195,7 +206,7 @@ Run a modern, multi-tab Streamlit dashboard:
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
-> Launch at **`http://localhost:8501`** to generate books, monitor live pipeline execution, read chapters, and download DOCX files.
+> Launch at **`http://localhost:8501`** to generate books, monitor the pipeline, and download the DOCX, EPUB and release report.
 
 ### 2. Built-in REST API & Multi-Book Web Server (`server.py`)
 Run a zero-dependency local REST API web server:
@@ -203,7 +214,7 @@ Run a zero-dependency local REST API web server:
 ```bash
 python3 server.py
 ```
-> Access at **`http://localhost:8080`** for live 5-node agent pipeline monitoring and multi-book job creation.
+> Access at **`http://localhost:8080`**. It listens on this computer only, because the API starts paid LLM jobs and has no authentication.
 
 ---
 

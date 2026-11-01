@@ -14,15 +14,17 @@ from schemas.models import (
     ChapterBeat,
     RevisionBrief,
     ContinuityIssue,
-    AntiSlopViolation
+    AntiSlopViolation,
+    BookBrief,
+    CraftReview,
+    SceneNote
 )
 from generator.llm_client import LlmClient
+from generator.json_parser import generate_validated, StructuredOutputError
 from prompts.system_prompts import (
-    CONTINUITY_EDITOR_PROMPT,
-    ANTI_SLOP_EDITOR_PROMPT,
     FORBIDDEN_SLOP_PATTERNS,
     TAMIL_FORBIDDEN_SLOP_PATTERNS,
-    TAMIL_ANTI_SLOP_EDITOR_PROMPT,
+    DEVELOPMENTAL_EDITOR_PROMPT,
     PERCEPTUAL_FILTER_PATTERNS
 )
 
@@ -40,26 +42,19 @@ class ContinuityEditorAgent:
         story_state: StoryState
     ) -> List[ContinuityIssue]:
         issues = []
-        # Local rule checks: check character voice taboo words
+        # Taboo phrases only count inside dialogue; narration may legitimately use them
+        dialogue = " ".join(re.findall(r'["“]([^"”]+)["”]', chapter_text)).lower()
         for char in registry.characters:
+            if char.name.lower() not in chapter_text.lower():
+                continue
             for taboo in char.voice_fingerprint.taboo_phrases:
-                if taboo.lower() in chapter_text.lower():
+                if taboo.lower() in dialogue:
                     issues.append(ContinuityIssue(
-                        severity="MAJOR",
+                        severity="MINOR",
                         location=f"Chapter {chapter_number}",
-                        description=f"Character {char.name} used taboo phrase '{taboo}' which breaks voice fingerprint.",
-                        remedy=f"Replace or rephrase '{taboo}' in {char.name}'s dialogue."
+                        description=f"Dialogue contains '{taboo}', a phrase {char.name} never uses. Confirm another character speaks it.",
+                        remedy=f"If {char.name} says it, rephrase in their voice."
                     ))
-
-        # World rule checks
-        for rule in world_bible.rules:
-            if rule.rule_name.lower() in chapter_text.lower() and "broken" in chapter_text.lower():
-                issues.append(ContinuityIssue(
-                    severity="CRITICAL",
-                    location=f"Chapter {chapter_number}",
-                    description=f"World rule '{rule.rule_name}' broken without applying consequence: {rule.narrative_consequence}",
-                    remedy=f"Incorporate consequence: {rule.narrative_consequence}"
-                ))
 
         # Epistemic state & secret leaks check
         if story_state and hasattr(story_state, "epistemic_secrets"):
@@ -132,7 +127,7 @@ class AntiSlopEditorAgent:
             if pattern in text_lower:
                 violations.append(AntiSlopViolation(
                     phrase_or_pattern=pattern,
-                    line_snippet=f"Detected '{pattern}' in draft text.",
+                    line_snippet=self._snippet(chapter_text, pattern),
                     reason="Banned AI cliché / writing trope.",
                     replacement_suggestion=f"Remove or replace '{pattern}' with vivid, original prose."
                 ))
@@ -143,13 +138,15 @@ class AntiSlopEditorAgent:
                 if filter_pattern in text_lower:
                     violations.append(AntiSlopViolation(
                         phrase_or_pattern=filter_pattern,
-                        line_snippet=f"Detected perceptual filter '{filter_pattern}'.",
+                        line_snippet=self._snippet(chapter_text, filter_pattern),
                         reason="Filter language weakens Deep POV immersion.",
                         replacement_suggestion=f"Cut '{filter_pattern}' and describe the sensory action directly."
                     ))
 
         # Check Gary Provost Sentence Cadence & Rhythm
         violations.extend(self.audit_sentence_cadence(chapter_text, is_tamil=is_tamil))
+
+        violations.extend(self.audit_repetition(chapter_text))
 
         # Check for preachy conclusion at end of chapter text
         lines = [l.strip() for l in chapter_text.split("\n") if l.strip()]
@@ -164,6 +161,39 @@ class AntiSlopEditorAgent:
                     replacement_suggestion="Strip final summary paragraph. End on concrete scene action or cliffhanger."
                 ))
 
+        return violations
+
+    @staticmethod
+    def _snippet(text: str, phrase: str, radius: int = 60) -> str:
+        at = text.lower().find(phrase)
+        return text[max(0, at - radius):at + len(phrase) + radius].replace("\n", " ").strip()
+
+    def audit_repetition(self, chapter_text: str) -> List[AntiSlopViolation]:
+        """Measures the structural tics that phrase lists miss."""
+        violations = []
+        prose = "\n".join(l for l in chapter_text.split("\n") if not l.lstrip().startswith("#"))
+        word_count = max(len(prose.split()), 1)
+
+        antithesis = len(re.findall(r"\b(?:not|n't)\b[^.!?\n]{0,60}[,;:—-]\s*(?:but|it was|it is|they were)\b", prose, re.IGNORECASE))
+        if word_count >= 500 and antithesis * 1000 / word_count > 2:
+            violations.append(AntiSlopViolation(
+                phrase_or_pattern="Overused 'not X but Y' construction",
+                line_snippet=f"{antithesis} uses in {word_count} words.",
+                reason="This rhetorical pattern is a strong tell of machine prose.",
+                replacement_suggestion="State the thing directly; keep at most one per chapter."
+            ))
+
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', prose) if s.strip()]
+        openers = [re.sub(r'^\W+', '', s).split(" ")[0].lower() for s in sentences]
+        for i in range(len(openers) - 3):
+            if openers[i] and len(set(openers[i:i + 4])) == 1:
+                violations.append(AntiSlopViolation(
+                    phrase_or_pattern="Repeated sentence opener",
+                    line_snippet=" ".join(sentences[i:i + 4])[:120],
+                    reason=f"Four consecutive sentences open with '{openers[i]}'.",
+                    replacement_suggestion="Vary the sentence openings unless the repetition is a deliberate effect."
+                ))
+                break
         return violations
 
     def audit_sentence_cadence(self, chapter_text: str, is_tamil: bool = False) -> List[AntiSlopViolation]:
@@ -198,7 +228,6 @@ class AntiSlopEditorAgent:
 
         # 2. Check for presence of dynamic extremes (staccato vs sweeping sentences)
         has_staccato = any(wc <= 5 for wc in word_counts)
-        has_sweeping = any(wc >= 26 for wc in word_counts)
         if not has_staccato and len(sentences) >= 20:
             violations.append(AntiSlopViolation(
                 phrase_or_pattern="Lack of Staccato Rhythm",
@@ -210,10 +239,66 @@ class AntiSlopEditorAgent:
         return violations
 
 
+class DevelopmentalEditorAgent:
+    """Reads a chapter as a demanding editor would. Regex can catch cliches; only a reader can catch dullness."""
+
+    RUBRIC = {
+        "opening_hook": "Does the first paragraph make stopping hard?",
+        "tension_or_curiosity": "Does each scene create a reason to read the next?",
+        "depth": "Character depth in fiction; genuine insight in non-fiction.",
+        "voice": "Is the voice distinct and consistent with the guide?",
+        "originality": "Are details and turns specific and unpredictable?",
+        "pacing": "Is anything slack, repeated or over-explained?",
+        "ending_pull": "Does the ending force the next chapter open?",
+    }
+
+    def __init__(self, llm_client: LlmClient):
+        self.llm = llm_client
+
+    def review(self, chapter_beat: ChapterBeat, scenes: List[str], brief: BookBrief, story_state: StoryState) -> CraftReview:
+        numbered = "\n\n".join(f"[SCENE {i}]\n{text}" for i, text in enumerate(scenes, start=1))
+        rubric = "\n".join(f'- {key}: {question}' for key, question in self.RUBRIC.items())
+        prompt = f"""TASK: chapter review
+Book promise: {brief.reader_promise}
+Target reader: {brief.target_reader}
+Voice guide: {brief.voice_guide}
+Chapter {chapter_beat.chapter_number}: {chapter_beat.title}
+Chapter purpose: {chapter_beat.core_narrative_arc}
+Established so far: {story_state.story_so_far_summary[-3000:] or "Nothing; this is the opening."}
+
+Score 1-10 on:
+{rubric}
+
+MANUSCRIPT:
+{numbered}
+
+Return ONLY JSON:
+{{"scores": {{{", ".join(f'"{key}": 0' for key in self.RUBRIC)}}},
+ "strengths": ["what revision must preserve"],
+ "scene_notes": [{{"scene": 1, "problem": "quote the weak line and say why", "fix": "concrete rewrite direction"}}]}}
+"""
+        return generate_validated(
+            self.llm, prompt, DEVELOPMENTAL_EDITOR_PROMPT, CraftReview,
+            validator=self._validate, max_tokens=3000
+        )
+
+    def _validate(self, review: CraftReview):
+        missing = [key for key in self.RUBRIC if key not in review.scores]
+        if missing:
+            return f"Missing scores: {', '.join(missing)}."
+        if any(not 1 <= v <= 10 for v in review.scores.values()):
+            return "Scores must be between 1 and 10."
+        return None
+
+
 class MasterAdversarialReviewer:
+    PASS_MEAN = 8.0
+    PASS_FLOOR = 7.0
+
     def __init__(self, llm_client: LlmClient):
         self.continuity_editor = ContinuityEditorAgent(llm_client)
         self.anti_slop_editor = AntiSlopEditorAgent(llm_client)
+        self.developmental_editor = DevelopmentalEditorAgent(llm_client)
 
     def evaluate_chapter(
         self,
@@ -221,7 +306,9 @@ class MasterAdversarialReviewer:
         chapter_text: str,
         world_bible: WorldBible,
         registry: CharacterRegistry,
-        story_state: StoryState
+        story_state: StoryState,
+        scenes: List[str] = None,
+        brief: BookBrief = None
     ) -> RevisionBrief:
         lang = getattr(world_bible, "language", "english")
         cont_issues = self.continuity_editor.audit_chapter(
@@ -230,15 +317,53 @@ class MasterAdversarialReviewer:
         slop_violations = self.anti_slop_editor.audit_slop(
             chapter_beat.chapter_number, chapter_text, language=lang
         )
+        scenes = scenes or [chapter_text]
+        scene_notes = self._mechanical_scene_notes(scenes, slop_violations)
 
-        passed = len(cont_issues) == 0 and len(slop_violations) == 0
+        craft_scores, craft_score, strengths = {}, None, []
+        unreviewed = False
+        if brief:
+            try:
+                review = self.developmental_editor.review(chapter_beat, scenes, brief, story_state)
+                craft_scores = review.scores
+                craft_score = round(sum(review.scores.values()) / len(review.scores), 2)
+                strengths = review.strengths
+                scene_notes += [n for n in review.scene_notes if 1 <= n.scene <= len(scenes)]
+            except StructuredOutputError as e:
+                # Never treat a missing review as approval
+                print(f"  [Developmental Editor Warning] {e}")
+                unreviewed = True
 
-        directive = "Draft meets high editorial standards." if passed else "Refine prose: fix continuity inconsistencies and purge identified AI tropes."
+        blocking = [i for i in cont_issues if i.severity != "MINOR"]
+        craft_ok = not brief or (
+            craft_score is not None
+            and craft_score >= self.PASS_MEAN
+            and min(craft_scores.values()) >= self.PASS_FLOOR
+        )
+        passed = not blocking and not slop_violations and craft_ok and not unreviewed
+
+        directive = "Draft meets high editorial standards." if passed else "Raise the weakest scenes, fix continuity and purge identified AI tropes, keeping what already works."
 
         return RevisionBrief(
             chapter_number=chapter_beat.chapter_number,
             passed_audit=passed,
             continuity_issues=cont_issues,
             slop_violations=slop_violations,
-            editor_overall_directive=directive
+            editor_overall_directive=directive,
+            craft_scores=craft_scores,
+            craft_score=craft_score,
+            strengths=strengths,
+            scene_notes=scene_notes
         )
+
+    @staticmethod
+    def _mechanical_scene_notes(scenes: List[str], violations: List[AntiSlopViolation]) -> List[SceneNote]:
+        notes = []
+        for violation in violations:
+            pattern = violation.phrase_or_pattern.lower()
+            located = [i for i, s in enumerate(scenes, start=1) if pattern in s.lower()]
+            for scene in located:
+                notes.append(SceneNote(scene=scene, problem=f"Contains '{violation.phrase_or_pattern}': {violation.reason}", fix=violation.replacement_suggestion))
+            if not located:
+                notes.append(SceneNote(scene=1, problem=f"{violation.phrase_or_pattern}: {violation.line_snippet}", fix=violation.replacement_suggestion))
+        return notes

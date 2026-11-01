@@ -5,24 +5,15 @@ Launch with: streamlit run streamlit_app.py
 
 import os
 import sys
-import time
-import json
-from pathlib import Path
+import contextlib
 import streamlit as st
 
 # Ensure project root is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from generator.blueprint import BLUEPRINTS, get_blueprint_for_genre, TAMIL_GENRES
-from generator.llm_client import LlmClient, LLMClient
-from generator.docx_compiler import compile_book, compile_book_to_docx
-from tools.file_writer import FileWriterTool
-from schemas.models import StoryState
-from agents.world_builder import WorldBuilderAgent
-from agents.character_architect import CharacterArchitectAgent
-from agents.master_outliner import MasterOutlinerAgent
-from agents.prose_drafter import ProseDrafterAgent
-from agents.critics import MasterAdversarialReviewer, AntiSlopEditorAgent
+from generator.blueprint import BLUEPRINTS, TAMIL_GENRES
+from generator.llm_client import LlmClient
+from pipeline import BookConfig, BookPipeline
 
 # Page Configuration
 st.set_page_config(
@@ -135,7 +126,8 @@ def main():
             genre_options = [k for k in BLUEPRINTS.keys() if not k.startswith("tamil_")]
             genre = st.selectbox("Genre / Blueprint", options=genre_options, index=0)
 
-        num_chapters = st.slider("Target Chapters", min_value=1, max_value=12, value=4)
+        num_chapters = st.slider("Chapters", min_value=1, max_value=60, value=24)
+        target_words = st.number_input("Target Words", min_value=1000, max_value=300000, value=80000, step=5000)
 
     with col2:
         st.subheader("💡 Story Concept & Prompt")
@@ -164,154 +156,50 @@ def main():
         log_expander = st.expander("📝 Detailed Pipeline Activity Logs", expanded=True)
         log_container = log_expander.container()
 
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        docx_filename = output_dir / f"{title.replace(' ', '_')}_streamlit.docx"
+        class StreamToLog:
+            """Mirrors pipeline progress lines into the page."""
+            def write(self, text):
+                line = text.strip()
+                if line:
+                    log_container.text(line)
+                    if line.startswith(("PHASE", "CHAPTER ")):
+                        status_text.info(line)
+
+            def flush(self):
+                pass
 
         try:
-            # Initialize Client
             llm_client = LlmClient(
                 provider=provider,
                 api_key=api_key if api_key else None,
                 model=model_name,
                 ollama_url=ollama_url
             )
-
-            # Step 1: World Building
-            status_text.info("🌐 Step 1/5: World Builder Agent constructing World Bible...")
-            progress_bar.progress(15)
-            log_container.write("► Launching World Builder Agent...")
-            world_agent = WorldBuilderAgent(llm_client)
-            world_bible = world_agent.build_world(seed_title=title, seed_concept=concept, genre=genre, language=language)
-            log_container.success(f"✓ World Bible created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined).")
-
-            # Step 2: Character Architecture
-            status_text.info("👤 Step 2/5: Character Architect Agent crafting profiles...")
-            progress_bar.progress(35)
-            log_container.write("► Launching Character Architect Agent...")
-            char_agent = CharacterArchitectAgent(llm_client)
-            character_registry = char_agent.build_characters(world_bible, author_name=author, language=language)
-            log_container.success(f"✓ Character Profiles generated ({len(character_registry.characters)} characters initialized).")
-
-            # Step 3: Master Outlining
-            status_text.info("📜 Step 3/5: Master Outliner generating chapter beats...")
-            progress_bar.progress(50)
-            log_container.write(f"► Launching Master Outliner Agent for {num_chapters} chapters...")
-            outliner = MasterOutlinerAgent(llm_client)
-            master_outline = outliner.build_outline(world_bible, character_registry, language=language)
-            target_chapters = master_outline.chapters[:num_chapters]
-            log_container.success(f"✓ Master Outline scaffolded: {len(target_chapters)} chapters ready.")
-
-            # Step 4: Prose Drafting & Adversarial Revision Loop
-            status_text.info("✍️ Step 4/5: Drafting & Reviewing Chapters...")
-            drafter = ProseDrafterAgent(llm_client)
-            reviewer = MasterAdversarialReviewer(llm_client)
-            story_state = StoryState()
-            file_writer = FileWriterTool(output_dir=str(output_dir))
-            file_writer.ensure_front_matter(title=title, domain=concept, author=author, language=language)
-
-            completed_chapters = []
-            total = len(target_chapters)
-
-            for idx, chapter_beat in enumerate(target_chapters, 1):
-                c_num = chapter_beat.chapter_number
-                c_title = chapter_beat.title
-
-                status_text.info(f"✍️ Drafting Chapter {c_num}/{total}: {c_title}...")
-                log_container.write(f"► Drafting Chapter {c_num}: {c_title}...")
-
-                draft_text = drafter.draft_chapter(
-                    chapter_beat=chapter_beat,
-                    world_bible=world_bible,
-                    registry=character_registry,
-                    story_state=story_state,
-                    revision_brief=None
-                )
-
-                log_container.write(f"► Adversarial Critics auditing Chapter {c_num}...")
-                revision_brief = reviewer.evaluate_chapter(
-                    chapter_beat=chapter_beat,
-                    chapter_text=draft_text,
-                    world_bible=world_bible,
-                    registry=character_registry,
-                    story_state=story_state
-                )
-
-                if revision_brief.passed_audit:
-                    log_container.success(f"✓ Chapter {c_num} passed adversarial audit clean!")
-                else:
-                    log_container.warning(f"⚠️ Chapter {c_num}: Found {len(revision_brief.continuity_issues)} continuity issue(s) & {len(revision_brief.slop_violations)} slop violation(s).")
-
-                # Persist chapter markdown
-                file_writer.write_markdown_chapter(c_num, draft_text)
-
-                # Update rolling story state
-                summary_prompt = f"Provide a concise 3-bullet narrative recap of Chapter {c_num}: {c_title}.\nText snippet:\n{draft_text[:1500]}"
-                try:
-                    chap_summary = llm_client.generate_text(summary_prompt, system_prompt="You are a narrative continuity summarizer. Write in " + ("Tamil" if language in ["tamil", "ta"] else "English") + ".")
-                except Exception:
-                    chap_summary = f"- Chapter {c_num} ({c_title}): Key events unfolded as planned."
-
-                story_state.story_so_far_summary += f"\n- Chapter {c_num} ({c_title}): {chap_summary.strip()}"
-                story_state.current_chapter = c_num
-
-                completed_chapters.append({
-                    "chapter_number": c_num,
-                    "title": c_title,
-                    "content": draft_text,
-                    "score": 9.5 if revision_brief.passed_audit else 8.5
-                })
-
-                prog_pct = 50 + int((idx / total) * 45)
-                progress_bar.progress(prog_pct)
-                log_container.success(f"✓ Chapter {c_num} finalized.")
-
-            # Step 5: Compilation
-            status_text.info("📄 Step 5/5: Compiling Publishing-Grade DOCX...")
-            book_dict = {
-                "metadata": {
-                    "title": title,
-                    "author": author,
-                    "genre": genre,
-                    "language": language
-                },
-                "chapters": completed_chapters
-            }
-
-            file_writer.compile_docx(
-                title=title,
-                domain=concept,
-                author=author,
-                docx_path=str(docx_filename),
-                language=language
+            config = BookConfig(
+                title=title, author=author, concept=concept, genre=genre, language=language,
+                chapters=num_chapters, target_words=int(target_words),
             )
+            with contextlib.redirect_stdout(StreamToLog()):
+                result = BookPipeline(config, llm_client).run()
             progress_bar.progress(100)
-            status_text.success("🎉 Book Generation Complete!")
 
-            st.balloons()
+            if result["ready"]:
+                status_text.success("Automated checks passed. Complete the human steps in the release report before publishing.")
+            else:
+                status_text.warning(f"Book generated, but NOT ready to publish: {len(result['blockers'])} blocker(s).")
+                for blocker in result["blockers"]:
+                    st.write(f"- {blocker}")
+
             st.divider()
             st.subheader("📥 Export & Read Book")
-
-            # Reading Tabs
-            tab_docx, tab_read, tab_json = st.tabs(["📄 Download DOCX", "📖 Read Manuscript", "🔍 Raw JSON Data"])
-
-            with tab_docx:
-                with open(docx_filename, "rb") as f:
-                    st.download_button(
-                        label=f"⬇️ Download '{title}' (.docx)",
-                        data=f,
-                        file_name=os.path.basename(docx_filename),
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
-                st.info("The exported DOCX includes custom Tamil typography (Mukta Malar / Noto Sans Tamil), localized cover page, title block, and formatted headers.")
-
-            with tab_read:
-                for ch in completed_chapters:
-                    with st.expander(f"Chapter {ch['chapter_number']}: {ch['title']}"):
-                        st.markdown(ch["content"])
-
-            with tab_json:
-                st.json(book_dict)
+            for label, path, mime in [
+                ("DOCX", result["docx"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                ("EPUB", result["epub"], "application/epub+zip"),
+            ]:
+                with open(path, "rb") as f:
+                    st.download_button(f"⬇️ Download {label}", data=f, file_name=os.path.basename(path), mime=mime)
+            with open(result["report"], encoding="utf-8") as f:
+                st.markdown(f.read())
 
         except Exception as e:
             status_text.error(f"Error during generation: {str(e)}")

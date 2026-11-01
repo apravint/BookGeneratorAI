@@ -1,282 +1,146 @@
 """
-Docx Compiler Engine Module - World-Class Bestseller Commercial Edition
-Compiles structured Markdown chapter files into an award-winning, publishing-grade 300-page trade book (.docx)
-complete with Half Title, Praise Pages, Front Cover, Copyright Notice, Epigraph, Preface, Foreword, Table of Contents, Callout Highlights, Appendices, Glossary, Index, and Back Cover.
+Docx Compiler Engine Module
+Compiles Markdown chapters into a print-ready trade interior (.docx): 6x9 trim with mirrored margins,
+real heading styles, a live table of contents, running heads and page numbers.
+Prints only facts the author supplied. Covers are separate files in commercial publishing.
 """
 
 import os
+import glob
 import re
+from datetime import datetime
 import docx
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml import parse_xml
-from docx.oxml.ns import nsdecls
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
 
-# Palette Definitions - World-Class Luxury Colors
-COLOR_NAVY = RGBColor(15, 23, 42)      # #0F172A Primary Dark
-COLOR_BLUE = RGBColor(2, 132, 199)     # #0284C7 Accent Blue
-COLOR_TEAL = RGBColor(5, 150, 105)     # #059669 Accent Teal
-COLOR_GOLD = RGBColor(217, 119, 6)      # #D97706 Accent Gold
-COLOR_DARK_GRAY = RGBColor(51, 65, 85) # #334155 Slate Dark
-COLOR_CODE_BG = "F1F5F9"               # #F1F5F9 Code Background
-COLOR_QUOTE_BG = "F8FAFC"              # #F8FAFC Quote Shading
-COLOR_COVER_BG = "0F172A"              # #0F172A Cover Background
-COLOR_TABLE_HEADER = "0F172A"          # #0F172A Table Header
-COLOR_ALT_ROW = "F8FAFC"               # #F8FAFC Alt Row
+BODY_FONT = "Georgia"
+TAMIL_FONT = "Noto Serif Tamil"
+CODE_FONT = "Consolas"
+BODY_SIZE = Pt(11)
+BLACK = RGBColor(0, 0, 0)
+SCENE_BREAK = re.compile(r'^(\*\s*\*\s*\*|\*{3,}|-{3,}|#)$')
 
-def set_cell_background(cell, hex_color):
-    tcPr = cell._element.get_or_add_tcPr()
-    shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{hex_color}"/>')
-    tcPr.append(shd)
 
-def set_cell_margins(cell, top=140, bottom=140, left=180, right=180):
-    tcPr = cell._element.get_or_add_tcPr()
-    tcMar = parse_xml(f'''
-        <w:tcMar {nsdecls("w")}>
-            <w:top w:w="{top}" w:type="dxa"/>
-            <w:bottom w:w="{bottom}" w:type="dxa"/>
-            <w:left w:w="{left}" w:type="dxa"/>
-            <w:right w:w="{right}" w:type="dxa"/>
-        </w:tcMar>
-    ''')
-    tcPr.append(tcMar)
+def _is_tamil(language):
+    return bool(language) and language.lower() in ["tamil", "ta"]
 
-def add_code_block(doc, code_text):
-    table = doc.add_table(rows=1, cols=1)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    
-    cell = table.cell(0, 0)
-    cell.width = Inches(6.0)
-    set_cell_background(cell, COLOR_CODE_BG)
-    set_cell_margins(cell, top=140, bottom=140, left=200, right=200)
-    
-    tcPr = cell._element.get_or_add_tcPr()
-    borders = parse_xml(f'''
-        <w:tcBorders {nsdecls("w")}>
-            <w:top w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/>
-            <w:left w:val="single" w:sz="24" w:space="0" w:color="0284C7"/>
-            <w:bottom w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/>
-            <w:right w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/>
-        </w:tcBorders>
-    ''')
-    tcPr.append(borders)
 
-    p = cell.paragraphs[0]
-    p.paragraph_format.space_before = Pt(4)
-    p.paragraph_format.space_after = Pt(4)
-    p.paragraph_format.line_spacing = 1.2
-    
-    lines = code_text.strip().split('\n')
-    for idx, line in enumerate(lines):
-        if idx > 0:
-            p = cell.add_paragraph()
-            p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.space_after = Pt(0)
-            p.paragraph_format.line_spacing = 1.2
-        
-        run = p.add_run(line)
-        run.font.name = 'Consolas'
-        run.font.size = Pt(9.5)
-        run.font.color.rgb = RGBColor(30, 41, 59)
-    
-    doc.add_paragraph().paragraph_format.space_after = Pt(8)
+def set_style_font(style, font_name, size=None, bold=None, italic=None):
+    """Sets a font for Latin and complex scripts, clearing theme fonts that would override it."""
+    rpr = style.element.get_or_add_rPr()
+    fonts = rpr.find(qn('w:rFonts'))
+    if fonts is None:
+        fonts = OxmlElement('w:rFonts')
+        rpr.insert(0, fonts)
+    for attr in list(fonts.attrib):
+        del fonts.attrib[attr]
+    for slot in ['w:ascii', 'w:hAnsi', 'w:cs', 'w:eastAsia']:
+        fonts.set(qn(slot), font_name)
+    style.font.color.rgb = BLACK
+    if size:
+        style.font.size = size
+        cs_size = rpr.find(qn('w:szCs'))
+        if cs_size is None:
+            cs_size = OxmlElement('w:szCs')
+            rpr.find(qn('w:sz')).addnext(cs_size)
+        cs_size.set(qn('w:val'), str(int(size.pt * 2)))
+    if bold is not None:
+        style.font.bold = bold
+    if italic is not None:
+        style.font.italic = italic
 
-def add_quote_callout(doc, quote_text):
-    table = doc.add_table(rows=1, cols=1)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    
-    cell = table.cell(0, 0)
-    cell.width = Inches(6.0)
-    set_cell_background(cell, COLOR_QUOTE_BG)
-    set_cell_margins(cell, top=160, bottom=160, left=220, right=220)
-    
-    tcPr = cell._element.get_or_add_tcPr()
-    borders = parse_xml(f'''
-        <w:tcBorders {nsdecls("w")}>
-            <w:top w:val="single" w:sz="12" w:space="0" w:color="D97706"/>
-            <w:left w:val="single" w:sz="24" w:space="0" w:color="059669"/>
-            <w:bottom w:val="single" w:sz="12" w:space="0" w:color="D97706"/>
-            <w:right w:val="none"/>
-        </w:tcBorders>
-    ''')
-    tcPr.append(borders)
 
-    p = cell.paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(6)
-    p.paragraph_format.space_after = Pt(6)
-    p.paragraph_format.line_spacing = 1.25
-    
-    run = p.add_run(f'“{quote_text.strip()}”')
-    run.font.name = 'Georgia'
-    run.font.size = Pt(11)
-    run.italic = True
-    run.font.color.rgb = COLOR_NAVY
-    
-    doc.add_paragraph().paragraph_format.space_after = Pt(8)
+def configure_styles(doc, language):
+    font = TAMIL_FONT if _is_tamil(language) else BODY_FONT
 
-def get_font_name(is_heading=False, is_code=False, language="english"):
-    if language and language.lower() in ["tamil", "ta"]:
-        return "Mukta Malar"
-    if is_code:
-        return 'Consolas'
-    return 'Arial' if is_heading else 'Arial'
+    normal = doc.styles['Normal']
+    set_style_font(normal, font, BODY_SIZE)
+    normal.paragraph_format.line_spacing = 1.2
+    normal.paragraph_format.space_after = Pt(0)
+    normal.paragraph_format.widow_control = True
+
+    for name, size, before, after, align in [
+        ('Heading 1', Pt(20), Pt(180), Pt(0), WD_ALIGN_PARAGRAPH.CENTER),
+        ('Heading 2', Pt(16), Pt(72), Pt(30), WD_ALIGN_PARAGRAPH.CENTER),
+        ('Heading 3', Pt(12), Pt(16), Pt(8), WD_ALIGN_PARAGRAPH.LEFT),
+        ('Heading 4', Pt(11), Pt(12), Pt(6), WD_ALIGN_PARAGRAPH.LEFT),
+    ]:
+        style = doc.styles[name]
+        set_style_font(style, font, size, bold=True)
+        style.paragraph_format.space_before = before
+        style.paragraph_format.space_after = after
+        style.paragraph_format.alignment = align
+        style.paragraph_format.keep_with_next = True
+
+
+def configure_page(section):
+    section.page_width = Inches(6)
+    section.page_height = Inches(9)
+    section.top_margin = Inches(0.8)
+    section.bottom_margin = Inches(0.8)
+    section.left_margin = Inches(0.875)   # inside margin once mirrored, safe for up to ~700 pages
+    section.right_margin = Inches(0.5)
+    section.header_distance = Inches(0.4)
+    section.footer_distance = Inches(0.4)
+
+
+def add_field(paragraph, instruction, cached_text=""):
+    for kind, text in [('begin', None), (None, instruction), ('separate', None), ('result', cached_text), ('end', None)]:
+        run = paragraph.add_run()
+        if kind in ('begin', 'separate', 'end'):
+            fld = OxmlElement('w:fldChar')
+            fld.set(qn('w:fldCharType'), kind)
+            run._r.append(fld)
+        elif kind == 'result':
+            run.text = text
+        else:
+            instr = OxmlElement('w:instrText')
+            instr.set(qn('xml:space'), 'preserve')
+            instr.text = f" {text} "
+            run._r.append(instr)
 
 
 def process_inline_formatting(paragraph, text, language="english"):
-    tokens = re.split(r'(\*\*.*?\*\*|\*.*?\*|`.*?`)', text)
-    font_name = get_font_name(is_heading=False, is_code=False, language=language)
+    tokens = re.split(r'(\*\*.+?\*\*|\*[^*\s](?:.*?[^*\s])?\*|`.+?`)', text)
     for token in tokens:
         if not token:
             continue
-        if token.startswith('**') and token.endswith('**'):
-            run = paragraph.add_run(token[2:-2])
-            run.bold = True
-            run.font.name = font_name
-        elif token.startswith('*') and token.endswith('*'):
+        if token.startswith('**') and token.endswith('**') and len(token) > 4:
+            paragraph.add_run(token[2:-2]).bold = True
+        elif token.startswith('*') and token.endswith('*') and len(token) > 2:
+            paragraph.add_run(token[1:-1]).italic = True
+        elif token.startswith('`') and token.endswith('`') and len(token) > 2:
             run = paragraph.add_run(token[1:-1])
-            run.italic = True
-            run.font.name = font_name
-        elif token.startswith('`') and token.endswith('`'):
-            run = paragraph.add_run(token[1:-1])
-            run.font.name = 'Consolas'
+            run.font.name = CODE_FONT
             run.font.size = Pt(9.5)
-            run.font.color.rgb = COLOR_BLUE
         else:
-            run = paragraph.add_run(token)
-            run.font.name = font_name
+            paragraph.add_run(token)
 
 
-def parse_markdown_file(doc, filepath, language="english"):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        content = f.read()
+def add_code_block(doc, code_text):
+    for line in code_text.rstrip().split('\n'):
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Inches(0.2)
+        p.paragraph_format.line_spacing = 1.1
+        run = p.add_run(line)
+        run.font.name = CODE_FONT
+        run.font.size = Pt(9)
+    doc.add_paragraph()
 
-    lines = content.split('\n')
-    in_code_block = False
-    code_lines = []
-    in_table = False
-    table_rows = []
-    font_name = get_font_name(is_heading=False, language=language)
 
-    is_first_heading = True
-    for line in lines:
-        stripped = line.strip()
-
-        if stripped.startswith('```'):
-            is_first_heading = False
-            if in_code_block:
-                add_code_block(doc, '\n'.join(code_lines))
-                code_lines = []
-                in_code_block = False
-            else:
-                in_code_block = True
-                code_lines = []
-            continue
-
-        if in_code_block:
-            is_first_heading = False
-            code_lines.append(line)
-            continue
-
-        if stripped.startswith('> '):
-            is_first_heading = False
-            add_quote_callout(doc, stripped[2:])
-            continue
-
-        if '|' in line and line.count('|') >= 2:
-            is_first_heading = False
-            if not in_table:
-                in_table = True
-                table_rows = []
-            if re.match(r'^\s*\|?\s*:?-+:?\s*\|', line):
-                continue
-            table_rows.append([cell.strip() for cell in line.strip('| \t').split('|')])
-            continue
-        else:
-            if in_table:
-                render_table(doc, table_rows, language=language)
-                in_table = False
-                table_rows = []
-
-        if not stripped:
-            continue
-
-        if stripped.startswith('# '):
-            if not is_first_heading:
-                doc.add_page_break()
-            is_first_heading = False
-            p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(40)
-            p.paragraph_format.space_after = Pt(16)
-            p.paragraph_format.keep_with_next = True
-            run = p.add_run(stripped[2:])
-            run.font.name = font_name
-            run.font.size = Pt(24)
-            run.bold = True
-            run.font.color.rgb = COLOR_NAVY
-        elif stripped.startswith('## '):
-            if not is_first_heading:
-                doc.add_page_break()
-            is_first_heading = False
-            p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(30)
-            p.paragraph_format.space_after = Pt(12)
-            p.paragraph_format.keep_with_next = True
-            run = p.add_run(stripped[3:])
-            run.font.name = font_name
-            run.font.size = Pt(20)
-            run.bold = True
-            run.font.color.rgb = COLOR_BLUE
-        elif stripped.startswith('### '):
-            is_first_heading = False
-            heading_text = stripped[4:]
-            heading_text = re.sub(r'^Sub-section \d+:\s*', '', heading_text, flags=re.IGNORECASE)
-            heading_text = re.sub(r'in The [^\n]*$', '', heading_text, flags=re.IGNORECASE).strip()
-            
-            p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(16)
-            p.paragraph_format.space_after = Pt(6)
-            p.paragraph_format.keep_with_next = True
-            run = p.add_run(heading_text)
-            run.font.name = font_name
-            run.font.size = Pt(14)
-            run.bold = True
-            run.font.color.rgb = COLOR_NAVY
-        elif stripped.startswith('#### '):
-            p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(12)
-            p.paragraph_format.space_after = Pt(4)
-            p.paragraph_format.keep_with_next = True
-            run = p.add_run(stripped[5:])
-            run.font.name = font_name
-            run.font.size = Pt(12)
-            run.bold = True
-            run.font.color.rgb = COLOR_TEAL
-        elif stripped.startswith('- ') or stripped.startswith('* '):
-            p = doc.add_paragraph(style='List Bullet')
-            p.paragraph_format.space_before = Pt(3)
-            p.paragraph_format.space_after = Pt(3)
-            p.paragraph_format.line_spacing = 1.2
-            process_inline_formatting(p, stripped[2:], language=language)
-        elif re.match(r'^\d+\.\s', stripped):
-            p = doc.add_paragraph(style='List Number')
-            p.paragraph_format.space_before = Pt(3)
-            p.paragraph_format.space_after = Pt(3)
-            p.paragraph_format.line_spacing = 1.2
-            text_without_num = re.sub(r'^\d+\.\s', '', stripped)
-            process_inline_formatting(p, text_without_num, language=language)
-        else:
-            p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(4)
-            p.paragraph_format.space_after = Pt(8)
-            p.paragraph_format.line_spacing = 1.25
-            process_inline_formatting(p, stripped, language=language)
-
-    if in_table and table_rows:
-        render_table(doc, table_rows, language=language)
+def add_quote(doc, quote_text, language):
+    p = doc.add_paragraph()
+    p.paragraph_format.left_indent = Inches(0.35)
+    p.paragraph_format.right_indent = Inches(0.35)
+    p.paragraph_format.space_before = Pt(8)
+    p.paragraph_format.space_after = Pt(8)
+    process_inline_formatting(p, quote_text, language)
+    for run in p.runs:
+        run.italic = True
 
 
 def render_table(doc, rows, language="english"):
@@ -284,441 +148,269 @@ def render_table(doc, rows, language="english"):
         return
     num_cols = max(len(row) for row in rows)
     table = doc.add_table(rows=len(rows), cols=num_cols)
+    table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
     for row_idx, row in enumerate(rows):
-        for col_idx, cell_value in enumerate(row):
-            if col_idx < num_cols:
-                cell = table.cell(row_idx, col_idx)
-                cell.text = ""
-                p = cell.paragraphs[0]
-                p.paragraph_format.space_before = Pt(5)
-                p.paragraph_format.space_after = Pt(5)
-                p.paragraph_format.line_spacing = 1.2
-                process_inline_formatting(p, cell_value, language=language)
-                
+        for col_idx, value in enumerate(row):
+            p = table.cell(row_idx, col_idx).paragraphs[0]
+            process_inline_formatting(p, value, language)
+            for run in p.runs:
+                run.font.size = Pt(9.5)
                 if row_idx == 0:
-                    set_cell_background(cell, COLOR_TABLE_HEADER)
-                    for run in p.runs:
-                        run.font.bold = True
-                        run.font.color.rgb = RGBColor(255, 255, 255)
-                else:
-                    if row_idx % 2 == 1:
-                        set_cell_background(cell, COLOR_ALT_ROW)
-                set_cell_margins(cell, top=100, bottom=100, left=140, right=140)
-    doc.add_paragraph().paragraph_format.space_after = Pt(8)
+                    run.bold = True
+    doc.add_paragraph()
 
 
-def build_front_cover(doc, title, domain, author, language="english"):
-    table = doc.add_table(rows=1, cols=1)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    font_name = get_font_name(language=language)
-    
-    cell = table.cell(0, 0)
-    cell.width = Inches(6.0)
-    set_cell_background(cell, COLOR_COVER_BG)
-    set_cell_margins(cell, top=600, bottom=600, left=350, right=350)
+def start_body_section(doc):
+    """Each part or chapter is its own section so its opening page can drop the running head."""
+    section = doc.add_section(WD_SECTION.NEW_PAGE)
+    section.different_first_page_header_footer = True
+    return section
 
-    p_title = cell.paragraphs[0]
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_title.paragraph_format.space_before = Pt(50)
-    p_title.paragraph_format.space_after = Pt(18)
-    r_title = p_title.add_run(title)
-    r_title.font.name = font_name
-    r_title.font.size = Pt(28)
-    r_title.bold = True
-    r_title.font.color.rgb = RGBColor(255, 255, 255)
 
-    p_sub = cell.add_paragraph()
-    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_sub.paragraph_format.space_after = Pt(50)
-    bestseller_label = "உலகளாவிய புகழ்பெற்ற பதிப்பு" if language in ["tamil", "ta"] else "THE INTERNATIONAL BESTSELLER"
-    r_sub = p_sub.add_run(bestseller_label)
-    r_sub.font.name = font_name
-    r_sub.font.size = Pt(13)
-    r_sub.bold = True
-    r_sub.font.color.rgb = COLOR_BLUE
+def parse_markdown_file(doc, filepath, language="english", new_sections=False):
+    with open(filepath, 'r', encoding='utf-8') as f:
+        lines = f.read().split('\n')
 
-    p_domain = cell.add_paragraph()
-    p_domain.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_domain.paragraph_format.space_after = Pt(140)
-    subject_label = f"முதன்மைப் பொருள்: {domain}" if language in ["tamil", "ta"] else f"CORE SUBJECT: {domain.upper()}"
-    r_domain = p_domain.add_run(subject_label)
-    r_domain.font.name = font_name
-    r_domain.font.size = Pt(10)
-    r_domain.bold = True
-    r_domain.font.color.rgb = COLOR_TEAL
+    in_code = False
+    code_lines = []
+    table_rows = []
+    indent_next = False
+    first_heading = True
 
-    p_author = cell.add_paragraph()
-    p_author.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_author.paragraph_format.space_after = Pt(40)
-    
-    author_header = "ஆசிரியர்\n" if language in ["tamil", "ta"] else "AUTHOR\n"
-    r_by = p_author.add_run(author_header)
-    r_by.font.name = font_name
-    r_by.font.size = Pt(10)
-    r_by.font.color.rgb = RGBColor(148, 163, 184)
-    
-    r_author = p_author.add_run(author)
-    r_author.font.name = font_name
-    r_author.font.size = Pt(22)
-    r_author.bold = True
-    r_author.font.color.rgb = COLOR_GOLD
+    for line in lines:
+        stripped = line.strip()
 
+        if stripped.startswith('```'):
+            if in_code:
+                add_code_block(doc, '\n'.join(code_lines))
+                code_lines = []
+            in_code = not in_code
+            continue
+        if in_code:
+            code_lines.append(line)
+            continue
+
+        if stripped.startswith('|') and stripped.count('|') >= 2:
+            if not re.match(r'^\|?[\s:|-]+\|?$', stripped):
+                table_rows.append([c.strip() for c in stripped.strip('|').split('|')])
+            continue
+        if table_rows:
+            render_table(doc, table_rows, language)
+            table_rows = []
+            indent_next = False
+
+        if not stripped:
+            continue
+
+        heading = re.match(r'^(#{1,4})\s+(.*)$', stripped)
+        if heading:
+            level = len(heading.group(1))
+            if level <= 2 and new_sections:
+                start_body_section(doc)
+            elif level <= 2 and not first_heading:
+                doc.add_page_break()
+            first_heading = False
+            doc.add_heading(heading.group(2), level=level)
+            indent_next = False
+        elif SCENE_BREAK.match(stripped):
+            p = doc.add_paragraph('*  *  *')
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(12)
+            indent_next = False
+        elif stripped.startswith('>'):
+            add_quote(doc, stripped.lstrip('> ').strip(), language)
+            indent_next = False
+        elif re.match(r'^[-*]\s', stripped):
+            process_inline_formatting(doc.add_paragraph(style='List Bullet'), stripped[2:], language)
+            indent_next = False
+        elif re.match(r'^\d+\.\s', stripped):
+            process_inline_formatting(doc.add_paragraph(style='List Number'), re.sub(r'^\d+\.\s', '', stripped), language)
+            indent_next = False
+        else:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            if indent_next:
+                p.paragraph_format.first_line_indent = Inches(0.25)
+            process_inline_formatting(p, stripped, language)
+            indent_next = True
+
+    if table_rows:
+        render_table(doc, table_rows, language)
+
+
+def centered(doc, text, size=None, bold=False, before=0, after=0):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(before)
+    p.paragraph_format.space_after = Pt(after)
+    run = p.add_run(text)
+    run.bold = bold
+    if size:
+        run.font.size = Pt(size)
+    return p
+
+
+def build_title_page(doc, title, author, metadata):
+    centered(doc, title, size=26, bold=True, before=130, after=8)
+    if metadata.get("subtitle"):
+        centered(doc, metadata["subtitle"], size=13, after=8)
+    centered(doc, author, size=14, before=30)
+    if metadata.get("publisher"):
+        centered(doc, metadata["publisher"], size=10, before=170)
     doc.add_page_break()
 
 
-def build_half_title_page(doc, title, language="english"):
-    font_name = get_font_name(language=language)
-    p_ht = doc.add_paragraph()
-    p_ht.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_ht.paragraph_format.space_before = Pt(200)
-    r_ht = p_ht.add_run(title)
-    r_ht.font.name = font_name
-    r_ht.font.size = Pt(22)
-    r_ht.bold = True
-    r_ht.font.color.rgb = COLOR_NAVY
-    doc.add_page_break()
-
-
-def build_title_and_copyright_page(doc, title, author, language="english"):
-    font_name = get_font_name(language=language)
-    p_t = doc.add_paragraph()
-    p_t.paragraph_format.space_before = Pt(50)
-    p_t.paragraph_format.space_after = Pt(14)
-    r_t = p_t.add_run(title)
-    r_t.font.name = font_name
-    r_t.font.size = Pt(24)
-    r_t.bold = True
-    r_t.font.color.rgb = COLOR_NAVY
-
-    p_a = doc.add_paragraph()
-    p_a.paragraph_format.space_after = Pt(220)
-    by_author = f"எழுதியவர் {author}" if language in ["tamil", "ta"] else f"By {author}"
-    r_a = p_a.add_run(by_author)
-    r_a.font.name = font_name
-    r_a.font.size = Pt(14)
-    r_a.bold = True
-    r_a.font.color.rgb = COLOR_BLUE
-
-    p_c = doc.add_paragraph()
-    p_c.paragraph_format.space_before = Pt(120)
-    p_c.paragraph_format.line_spacing = 1.2
-    copy_label = f"{title}\nகாப்புரிமை © 2026 - {author}. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை." if language in ["tamil", "ta"] else f"{title}\nCopyright © 2026 by {author}. All rights reserved."
-    r_c = p_c.add_run(copy_label)
-    r_c.font.name = font_name
-    r_c.font.size = Pt(9.5)
-    r_c.font.color.rgb = COLOR_DARK_GRAY
-
-    doc.add_page_break()
-
-
-def build_toc(doc, chapters_dir, language="english"):
-    font_name = get_font_name(language=language)
-    toc_p = doc.add_paragraph()
-    toc_p.paragraph_format.space_before = Pt(24)
-    toc_p.paragraph_format.space_after = Pt(16)
-    toc_title = "பொருளடக்கம்" if language in ["tamil", "ta"] else "Table of Contents"
-    run_toc = toc_p.add_run(toc_title)
-    run_toc.font.name = font_name
-    run_toc.font.size = Pt(22)
-    run_toc.bold = True
-    run_toc.font.color.rgb = COLOR_NAVY
-
-    toc_entries = []
-    page_counter = 1
-    seen_parts = set()
-
-    # Dynamically scan chapter files
-    for i in range(1, 13):
-        chap_file = os.path.join(chapters_dir, f"chapter_{i:02d}.md")
-        if os.path.exists(chap_file):
-            with open(chap_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                part_title = ""
-                chap_title = ""
-                for line in lines:
-                    line_str = line.strip()
-                    if line_str.startswith("# Part") or line_str.startswith("# பகுதி"):
-                        part_title = line_str.replace("#", "").strip()
-                    elif line_str.startswith("## Chapter") or line_str.startswith("## அத்தியாயம்"):
-                        chap_title = line_str.replace("##", "").strip()
-
-                if part_title and part_title not in seen_parts:
-                    seen_parts.add(part_title)
-                    toc_entries.append((part_title, True, str(page_counter)))
-                    page_counter += 2
-
-                if chap_title:
-                    toc_entries.append((chap_title, False, str(page_counter)))
-                    page_counter += 24
-                else:
-                    default_chap = f"அத்தியாயம் {i}" if language in ["tamil", "ta"] else f"Chapter {i}"
-                    toc_entries.append((default_chap, False, str(page_counter)))
-                    page_counter += 24
-
-    # Appendices and Glossary
-    if language in ["tamil", "ta"]:
-        toc_entries.append(("இணைப்புகள் & கலைச்சொற்கள்", True, str(page_counter)))
-        toc_entries.append(("இணைப்பு A: விரிவான குறிப்பேடு", False, str(page_counter + 2)))
-        toc_entries.append(("இணைப்பு B: ஆழ்ந்த ஆய்வுகள் & வழிகாட்டி", False, str(page_counter + 10)))
-        toc_entries.append(("இணைப்பு C: முக்கிய சட்டகங்கள் & வளங்கள்", False, str(page_counter + 18)))
-        toc_entries.append(("முக்கியக் கருத்துகள் & கலைச்சொல் வழிகாட்டி", False, str(page_counter + 24)))
-        toc_entries.append(("சொற்களின் அகராதி", False, str(page_counter + 28)))
+def copyright_lines(title, author, language, metadata):
+    year = metadata.get("year") or datetime.now().year
+    lines = []
+    if _is_tamil(language):
+        lines.append(f"காப்புரிமை © {year} {author}. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.")
+        if metadata.get("is_fiction"):
+            lines.append("இது ஒரு கற்பனைப் படைப்பு. பெயர்கள், பாத்திரங்கள், நிகழ்வுகள் அனைத்தும் கற்பனையே.")
     else:
-        toc_entries.append(("Appendices & Glossary", True, str(page_counter)))
-        toc_entries.append(("Appendix A: Comprehensive Reference Guide", False, str(page_counter + 2)))
-        toc_entries.append(("Appendix B: Deep Case Studies & Structural Playbooks", False, str(page_counter + 10)))
-        toc_entries.append(("Appendix C: Executive Framework Checklists & Resources", False, str(page_counter + 18)))
-        toc_entries.append(("Key Concepts & Terminology Guide", False, str(page_counter + 24)))
-        toc_entries.append(("Index of Concepts & Terms", False, str(page_counter + 28)))
+        lines.append(f"Copyright © {year} {author}. All rights reserved.")
+        lines.append("No part of this book may be reproduced without written permission from the copyright holder, except for brief quotations in reviews.")
+        if metadata.get("is_fiction"):
+            lines.append("This is a work of fiction. Names, characters, places and events are products of the author's imagination or are used fictitiously. Any resemblance to actual persons or events is coincidental.")
+    if metadata.get("isbn"):
+        lines.append(f"ISBN: {metadata['isbn']}")
+    if metadata.get("publisher"):
+        lines.append(metadata["publisher"])
+    return lines
 
-    for title_text, is_part, page_num in toc_entries:
+
+def build_copyright_page(doc, title, author, language, metadata):
+    for index, line in enumerate(copyright_lines(title, author, language, metadata)):
         p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(8 if is_part else 3)
-        p.paragraph_format.space_after = Pt(3)
-        if is_part:
-            run = p.add_run(title_text)
-            run.font.name = font_name
-            run.font.size = Pt(11.5)
-            run.bold = True
-            run.font.color.rgb = COLOR_BLUE
-        else:
-            p.paragraph_format.left_indent = Inches(0.25)
-            dots = " . " * max(1, int((55 - len(title_text)) / 2))
-            run = p.add_run(f"{title_text} {dots} {page_num}")
-            run.font.name = font_name
-            run.font.size = Pt(10)
-            run.font.color.rgb = COLOR_DARK_GRAY
-
+        p.paragraph_format.space_before = Pt(280 if index == 0 else 0)
+        p.paragraph_format.space_after = Pt(6)
+        p.add_run(line).font.size = Pt(8.5)
     doc.add_page_break()
 
 
-def build_index_page(doc, chapters_dir, language="english"):
-    font_name = get_font_name(language=language)
-    p_idx = doc.add_paragraph()
-    p_idx.paragraph_format.space_before = Pt(24)
-    p_idx.paragraph_format.space_after = Pt(14)
-    idx_title = "சொற்கள் மற்றும் கருத்துகளின் அகராதி" if language in ["tamil", "ta"] else "Index of Concepts & Terms"
-    run_idx = p_idx.add_run(idx_title)
-    run_idx.font.name = font_name
-    run_idx.font.size = Pt(22)
-    run_idx.bold = True
-    run_idx.font.color.rgb = COLOR_NAVY
-
-    # Dynamically extract key terms from compiled markdown files
-    words = set()
-    for fname in os.listdir(chapters_dir):
-        if fname.endswith(".md"):
-            with open(os.path.join(chapters_dir, fname), "r", encoding="utf-8") as f:
-                content = f.read()
-                found = re.findall(r'\*\*([^\*\n]{2,30})\*\*', content)
-                for item in found:
-                    words.add(item.strip())
-
-    if not words:
-        if language in ["tamil", "ta"]:
-            words = {"அரசியல் தந்திரம்", "காவியக் கதை", "வீரம்", "நீதிநெறி", "அரசாட்சி", "போர் உத்தி", "வாழ்க்கை தத்துவம்", "அறநெறி"}
-        else:
-            words = {"Action Frameworks", "Boundary Setting", "Core Principles", "Digital Transformation", "Emotional Alignment", "Leadership Models", "Paradigm Shift", "Resilience Vectors", "System Execution"}
-
-    grouped = {}
-    for word in sorted(words):
-        letter = word[0].upper()
-        grouped.setdefault(letter, []).append(f"{word}, 15-280")
-
-    for letter, items in sorted(grouped.items())[:12]:
-        p_letter = doc.add_paragraph()
-        p_letter.paragraph_format.space_before = Pt(10)
-        p_letter.paragraph_format.space_after = Pt(3)
-        r_l = p_letter.add_run(letter)
-        r_l.font.name = font_name
-        r_l.font.size = Pt(14)
-        r_l.bold = True
-        r_l.font.color.rgb = COLOR_BLUE
-
-        for item in items[:5]:
-            p_item = doc.add_paragraph()
-            p_item.paragraph_format.left_indent = Inches(0.25)
-            p_item.paragraph_format.space_before = Pt(2)
-            p_item.paragraph_format.space_after = Pt(2)
-            r_i = p_item.add_run(item)
-            r_i.font.name = font_name
-            r_i.font.size = Pt(10)
-            r_i.font.color.rgb = COLOR_DARK_GRAY
-
-    doc.add_page_break()
+def insert_setting(doc, element, before):
+    """Word rejects settings.xml children that are out of schema order."""
+    settings = doc.settings.element
+    for child in settings:
+        if child.tag in {qn(name) for name in before}:
+            child.addprevious(element)
+            return
+    settings.append(element)
 
 
-def build_back_cover(doc, title, author, language="english"):
-    table = doc.add_table(rows=1, cols=1)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    font_name = get_font_name(language=language)
-    
-    cell = table.cell(0, 0)
-    cell.width = Inches(6.0)
-    set_cell_background(cell, COLOR_COVER_BG)
-    set_cell_margins(cell, top=500, bottom=500, left=350, right=350)
-
-    p_head = cell.paragraphs[0]
-    p_head.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_head.paragraph_format.space_before = Pt(30)
-    p_head.paragraph_format.space_after = Pt(18)
-    head_label = "உலகளாவிய புகழ்பெற்ற பதிப்பு" if language in ["tamil", "ta"] else "THE INTERNATIONAL BESTSELLER"
-    r_head = p_head.add_run(head_label)
-    r_head.font.name = font_name
-    r_head.font.size = Pt(16)
-    r_head.bold = True
-    r_head.font.color.rgb = COLOR_GOLD
-
-    p_desc = cell.add_paragraph()
-    p_desc.paragraph_format.line_spacing = 1.25
-    p_desc.paragraph_format.space_after = Pt(30)
-    if language in ["tamil", "ta"]:
-        desc_text = f"இந்த 300 பக்க காவியப் படைப்பு '{title}' தலைப்பில் ஒப்பற்ற உலகளாவிய படைப்பாகும். ஆழமான சிந்தனை, சுவையான கதைக்கூறல் மற்றும் உயர் தத்துவங்கள் அடங்கிய காவிய நூல்."
-    else:
-        desc_text = (
-            f"This 300-page masterpiece delivers an unmissable blueprint for mastering {title}. "
-            f"Loved by readers worldwide, this book combines gripping storytelling, deep strategic insights, "
-            f"and actionable frameworks designed to inspire, transform, and empower."
-        )
-    r_desc = p_desc.add_run(desc_text)
-    r_desc.font.name = font_name
-    r_desc.font.size = Pt(10.5)
-    r_desc.font.color.rgb = RGBColor(241, 245, 249)
-
-    p_bio_title = cell.add_paragraph()
-    p_bio_title.paragraph_format.space_before = Pt(10)
-    p_bio_title.paragraph_format.space_after = Pt(4)
-    bio_title = "ஆசிரியர் பற்றி" if language in ["tamil", "ta"] else "ABOUT THE AUTHOR"
-    r_bio_title = p_bio_title.add_run(bio_title)
-    r_bio_title.font.name = font_name
-    r_bio_title.font.size = Pt(12)
-    r_bio_title.bold = True
-    r_bio_title.font.color.rgb = COLOR_BLUE
-
-    p_bio = cell.add_paragraph()
-    p_bio.paragraph_format.line_spacing = 1.2
-    p_bio.paragraph_format.space_after = Pt(40)
-    if language in ["tamil", "ta"]:
-        bio_text = f"{author} உலகப் புகழ்பெற்ற எழுத்தாளர் மற்றும் சிந்தனையாளர். ஆழமானக் கருத்துகளை எளிய தமிழ் நடையில் படைக்கும் வல்லமை படைத்தவர்."
-    else:
-        bio_text = (
-            f"{author} is an Author and Global Thought Leader whose works inspire readers worldwide. "
-            f"Renowned for turning complex topics into captivating, clear, and actionable reads."
-        )
-    r_bio = p_bio.add_run(bio_text)
-    r_bio.font.name = font_name
-    r_bio.font.size = Pt(10)
-    r_bio.font.color.rgb = RGBColor(203, 213, 225)
-
-    p_footer = cell.add_paragraph()
-    p_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    footer_text = "வகை: தமிழ் இலக்கியம் / காவியம் / சிறப்புப் பதிப்பு\nவிலை: ₹499 INR" if language in ["tamil", "ta"] else "CATEGORY: NON-FICTION / BESTSELLER / SYSTEM DESIGN\nPRICE: $69.99 US / $89.99 CAN"
-    r_foot = p_footer.add_run(footer_text)
-    r_foot.font.name = font_name
-    r_foot.font.size = Pt(9)
-    r_foot.font.color.rgb = RGBColor(148, 163, 184)
+def chapter_files(chapters_dir):
+    return sorted(glob.glob(os.path.join(chapters_dir, "chapter_*.md")))
 
 
-def compile_book(title: str, domain: str, author: str, chapters_dir: str, output_path: str, language: str = "english"):
+def build_toc(doc, chapters_dir, language):
+    doc.add_heading("பொருளடக்கம்" if _is_tamil(language) else "Contents", level=2)
+    # Exclude this page's own heading from the field by applying it as a plain paragraph style
+    doc.paragraphs[-1].style = doc.styles['Normal']
+    title_run = doc.paragraphs[-1].runs[0]
+    title_run.bold = True
+    title_run.font.size = Pt(16)
+    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.paragraphs[-1].paragraph_format.space_after = Pt(20)
+
+    entries = []
+    for path in chapter_files(chapters_dir):
+        with open(path, encoding='utf-8') as f:
+            entries += [m.group(1) for m in re.finditer(r'^#{1,2}\s+(.*)$', f.read(), re.MULTILINE)]
+
+    # Word refreshes this field (and adds page numbers) on open; other readers show the cached list
+    p = doc.add_paragraph()
+    add_field(p, 'TOC \\o "1-2" \\h \\z \\u', cached_text=entries[0] if entries else "")
+    for entry in entries[1:]:
+        doc.add_paragraph(entry)
+    update = OxmlElement('w:updateFields')
+    update.set(qn('w:val'), 'true')
+    insert_setting(doc, update, before=('w:hdrShapeDefaults', 'w:footnotePr', 'w:endnotePr', 'w:compat', 'w:docVars', 'w:rsids', 'w:themeFontLang', 'w:clrSchemeMapping', 'w:shapeDefaults', 'w:decimalSymbol', 'w:listSeparator'))
+
+
+def configure_running_heads(section, title, author):
+    section.different_first_page_header_footer = True
+    section.header.is_linked_to_previous = False
+    section.footer.is_linked_to_previous = False
+    section.even_page_header.is_linked_to_previous = False
+    section.even_page_footer.is_linked_to_previous = False
+
+    for container, align, text in [
+        (section.header, WD_ALIGN_PARAGRAPH.RIGHT, title),
+        (section.even_page_header, WD_ALIGN_PARAGRAPH.LEFT, author),
+    ]:
+        p = container.paragraphs[0]
+        p.alignment = align
+        p.add_run(text).font.size = Pt(8.5)
+
+    for container, align in [
+        (section.footer, WD_ALIGN_PARAGRAPH.RIGHT),
+        (section.even_page_footer, WD_ALIGN_PARAGRAPH.LEFT),
+        (section.first_page_footer, WD_ALIGN_PARAGRAPH.CENTER),
+    ]:
+        p = container.paragraphs[0]
+        p.alignment = align
+        add_field(p, 'PAGE', '1')
+        for run in p.runs:
+            run.font.size = Pt(9)
+
+
+
+def restart_page_numbers(section):
+    """Page 1 is the first body page; later sections continue the count."""
+    pg_num = OxmlElement('w:pgNumType')
+    pg_num.set(qn('w:start'), '1')
+    margins = section._sectPr.find(qn('w:pgMar'))
+    margins.addnext(pg_num)
+
+
+def compile_book(title: str, domain: str, author: str, chapters_dir: str, output_path: str, language: str = "english", metadata: dict = None):
+    metadata = metadata or {}
     doc = docx.Document()
-    font_name = get_font_name(language=language)
-    
-    for section in doc.sections:
-        section.top_margin = Inches(1.25)
-        section.bottom_margin = Inches(1.25)
-        section.left_margin = Inches(1.25)
-        section.right_margin = Inches(1.25)
+    configure_styles(doc, language)
+    doc.settings.odd_and_even_pages_header_footer = True
+    insert_setting(doc, OxmlElement('w:mirrorMargins'), before=(
+        'w:alignBordersAndEdges', 'w:bordersDoNotSurroundHeader', 'w:bordersDoNotSurroundFooter', 'w:gutterAtTop',
+        'w:hideSpellingErrors', 'w:hideGrammaticalErrors', 'w:activeWritingStyle', 'w:proofState', 'w:formsDesign',
+        'w:attachedTemplate', 'w:linkStyles', 'w:stylePaneFormatFilter', 'w:stylePaneSortMethod', 'w:documentType',
+        'w:mailMerge', 'w:revisionView', 'w:trackRevisions', 'w:defaultTabStop', 'w:autoHyphenation', 'w:evenAndOddHeaders',
+        'w:characterSpacingControl', 'w:compat', 'w:rsids'
+    ))
+    configure_page(doc.sections[0])
 
-    # 1. Front Cover
-    build_front_cover(doc, title, domain, author, language=language)
+    build_title_page(doc, title, author, metadata)
+    build_copyright_page(doc, title, author, language, metadata)
 
-    # 2. Half Title Page
-    build_half_title_page(doc, title, language=language)
+    if metadata.get("dedication"):
+        centered(doc, metadata["dedication"], before=150)
+        doc.add_page_break()
 
-    # 3. Praise Page
+    # Praise appears only if the author placed real, permissioned quotes in praise.md
     praise_path = os.path.join(chapters_dir, "praise.md")
     if os.path.exists(praise_path):
         parse_markdown_file(doc, praise_path, language=language)
         doc.add_page_break()
 
-    # 4. Title & Copyright Page
-    build_title_and_copyright_page(doc, title, author, language=language)
+    build_toc(doc, chapters_dir, language)
 
-    # 5. Epigraph Page
-    epigraph_path = os.path.join(chapters_dir, "epigraph.md")
-    if os.path.exists(epigraph_path):
-        parse_markdown_file(doc, epigraph_path, language=language)
-        doc.add_page_break()
+    files = chapter_files(chapters_dir)
+    for index, chap_path in enumerate(files):
+        print(f"Compiling {os.path.basename(chap_path)}...")
+        parse_markdown_file(doc, chap_path, language=language, new_sections=True)
+        if index == 0 and len(doc.sections) > 1:
+            configure_running_heads(doc.sections[1], title, author)
+            # Set only now: add_section clones the previous section, which would restart numbering at every chapter
+    if len(doc.sections) > 1:
+        restart_page_numbers(doc.sections[1])
 
-    # 6. Preface Page
-    preface_path = os.path.join(chapters_dir, "preface.md")
-    if os.path.exists(preface_path):
-        parse_markdown_file(doc, preface_path, language=language)
-        doc.add_page_break()
+    if metadata.get("author_bio"):
+        start_body_section(doc)
+        doc.add_heading("ஆசிரியர் பற்றி" if _is_tamil(language) else "About the Author", level=2)
+        p = doc.add_paragraph(metadata["author_bio"])
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    # 7. Foreword Page
-    foreword_path = os.path.join(chapters_dir, "foreword.md")
-    if os.path.exists(foreword_path):
-        parse_markdown_file(doc, foreword_path, language=language)
-        doc.add_page_break()
-
-    # 8. Table of Contents
-    build_toc(doc, chapters_dir, language=language)
-
-    # 9. Header & Footer
-    body_section = doc.sections[0]
-    header = body_section.header
-    hp = header.paragraphs[0]
-    hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    hrun = hp.add_run(f"{title} | {author}")
-    hrun.font.name = font_name
-    hrun.font.size = Pt(8.5)
-    hrun.font.color.rgb = COLOR_DARK_GRAY
-
-    footer = body_section.footer
-    fp = footer.paragraphs[0]
-    fp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    frun = fp.add_run(title)
-    frun.font.name = font_name
-    frun.font.size = Pt(8.5)
-    frun.font.color.rgb = COLOR_DARK_GRAY
-
-    # 10. Process Chapters 1 through 12
-    for i in range(1, 13):
-        chap_filename = f"chapter_{i:02d}.md"
-        chap_path = os.path.join(chapters_dir, chap_filename)
-        
-        if os.path.exists(chap_path):
-            print(f"Compiling {chap_filename}...")
-            parse_markdown_file(doc, chap_path, language=language)
-            doc.add_page_break()
-
-    # 11. Process Appendices
-    appendices = ["appendix_a.md", "appendix_b.md", "appendix_c.md"]
-    for idx, app_file in enumerate(appendices):
-        app_path = os.path.join(chapters_dir, app_file)
-        if os.path.exists(app_path):
-            print(f"Compiling {app_file}...")
-            parse_markdown_file(doc, app_path, language=language)
-            doc.add_page_break()
-
-    # 12. Technical Glossary
-    glossary_path = os.path.join(chapters_dir, "glossary.md")
-    if os.path.exists(glossary_path):
-        print("Compiling Glossary...")
-        parse_markdown_file(doc, glossary_path, language=language)
-        doc.add_page_break()
-
-    # 13. Index
-    build_index_page(doc, chapters_dir, language=language)
-
-    # 14. Back Cover
-    build_back_cover(doc, title, author, language=language)
-
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path)
     print(f"\nSuccessfully compiled manuscript to: {output_path}")
 
@@ -768,4 +460,3 @@ def compile_book_to_docx(book_data, output_path: str, language: str = "english")
         )
     else:
         raise ValueError(f"Unsupported book_data format: {type(book_data)}")
-
