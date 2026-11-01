@@ -2,6 +2,8 @@ import os
 import tempfile
 import unittest
 import docx
+from docx.oxml.ns import qn
+from docx.shared import Inches
 from generator.docx_compiler import compile_book
 
 
@@ -36,6 +38,13 @@ class TestDocxCompiler(unittest.TestCase):
             full_text = " ".join([p.text for p in doc.paragraphs])
             self.assertIn("The Quantum Realm", full_text)
             self.assertIn("Pravin Tamilan", full_text)
+            self.assertIn("Copyright ©", full_text)
+            self.assertNotIn("BESTSELLER", full_text)
+            self.assertEqual(doc.sections[0].page_width, Inches(6))
+
+            # Numbering restarts only once, at the first body page
+            restarts = doc.element.body.findall('.//' + qn('w:pgNumType'))
+            self.assertEqual(len(restarts), 1)
 
 
 if __name__ == "__main__":

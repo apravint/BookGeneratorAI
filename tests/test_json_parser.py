@@ -52,6 +52,10 @@ We need to generate a world rule. Let's think about constraints.
         self.assertIsNone(parse_llm_json("This is definitely not json"))
         self.assertIsNone(parse_llm_json(""))
 
+    def test_smart_quotes_in_valid_strings_survive(self):
+        text = '{"blurb": "He said, “stay”, and left."}'
+        self.assertEqual(parse_llm_json(text)["blurb"], "He said, “stay”, and left.")
+
 
 if __name__ == "__main__":
     unittest.main()

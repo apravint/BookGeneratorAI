@@ -110,8 +110,23 @@ class ForeshadowingClue(BaseModel):
     payoff_notes: str = Field(default="", description="Resolution details when resolved")
 
 
+class BookBrief(BaseModel):
+    """Commercial concept every downstream agent writes toward."""
+    is_fiction: bool = Field(default=True, description="True for narrative fiction, False for non-fiction")
+    logline: str = Field(default="", description="One-sentence hook a reader would repeat to a friend")
+    target_reader: str = Field(default="", description="Specific reader this book is for")
+    reader_promise: str = Field(default="", description="The experience or transformation the book guarantees")
+    central_question: str = Field(default="", description="The question that keeps pages turning")
+    what_makes_it_different: str = Field(default="", description="Why this is not like other books on the shelf")
+    genre_conventions: List[str] = Field(default_factory=list, description="Conventions readers of this genre expect")
+    ending: str = Field(default="", description="How the book ends or what final insight it lands on")
+    voice_guide: str = Field(default="", description="Concrete traits of the narrative voice")
+    voice_sample: str = Field(default="", description="Short paragraph demonstrating the voice")
+
+
 class SubBeat(BaseModel):
     section_number: str = Field(default="1.1", description="Section number")
+    heading: str = Field(default="", description="Reader-facing section heading (non-fiction only)")
     scene_objective: str = Field(default="Execute core scene goal", description="Scene goal")
     beat_type: str = Field(default="SCENE_GOAL", description="Dramatic beat type (SCENE_GOAL, CONFLICT_ESCALATION, DISASTER_REVERSAL, EMOTIONAL_REACTION, DILEMMA_CALCULATION, PIVOTAL_DECISION)")
     micro_tension_level: int = Field(default=5, ge=1, le=10, description="Micro-tension index (1=calm, 10=maximum crisis)")
@@ -124,6 +139,7 @@ class SubBeat(BaseModel):
 
 class ChapterBeat(BaseModel):
     chapter_number: int = Field(default=1, description="Chapter number")
+    part_title: str = Field(default="", description="Title of the book part this chapter opens or belongs to")
     title: str = Field(default="Chapter Title", description="Chapter title")
     pov_character: str = Field(default="Protagonist", description="POV perspective")
     location: str = Field(default="Primary Setting", description="Location")
@@ -140,6 +156,7 @@ class MasterOutline(BaseModel):
     total_parts: int = Field(default=4, description="Parts count")
     chapters: List[ChapterBeat] = Field(default_factory=list, description="Chapter beats")
     pacing_notes: str = Field(default="4-Part escalating pacing curve", description="Pacing notes")
+    foreshadowing: List[ForeshadowingClue] = Field(default_factory=list, description="Setups and payoffs planned across the book")
 
 
 class ContinuityIssue(BaseModel):
@@ -156,17 +173,34 @@ class AntiSlopViolation(BaseModel):
     replacement_suggestion: str = Field(default="Replace with original vivid prose", description="Suggestion")
 
 
+class SceneNote(BaseModel):
+    scene: int = Field(default=1, description="1-based scene number the note applies to")
+    problem: str = Field(default="", description="Specific weakness, quoting the text where possible")
+    fix: str = Field(default="", description="Concrete rewrite direction")
+
+
+class CraftReview(BaseModel):
+    scores: Dict[str, float] = Field(default_factory=dict, description="Rubric scores from 1 to 10")
+    strengths: List[str] = Field(default_factory=list, description="What must survive revision")
+    scene_notes: List[SceneNote] = Field(default_factory=list, description="Scene-level revision notes")
+
+
 class RevisionBrief(BaseModel):
     chapter_number: int = Field(default=1, description="Target chapter number")
     passed_audit: bool = Field(default=True, description="Audit passed status")
     continuity_issues: List[ContinuityIssue] = Field(default_factory=list, description="Continuity issues")
     slop_violations: List[AntiSlopViolation] = Field(default_factory=list, description="Slop violations")
     editor_overall_directive: str = Field(default="Draft meets editorial standards.", description="Overall directive")
+    craft_scores: Dict[str, float] = Field(default_factory=dict, description="Developmental editor rubric scores")
+    craft_score: Optional[float] = Field(default=None, description="Mean rubric score; None when unreviewed")
+    strengths: List[str] = Field(default_factory=list, description="What revision must preserve")
+    scene_notes: List[SceneNote] = Field(default_factory=list, description="Scene-level revision notes")
 
 
 class StoryState(BaseModel):
     current_chapter: int = Field(default=0, description="Current chapter number")
     story_so_far_summary: str = Field(default="", description="Running story memory summary")
+    chapter_recaps: Dict[int, str] = Field(default_factory=dict, description="Recap of each finished chapter")
     active_plot_threads: List[str] = Field(default_factory=list, description="Unresolved plot points")
     resolved_plot_threads: List[str] = Field(default_factory=list, description="Resolved plot points")
     character_states: Dict[str, str] = Field(default_factory=dict, description="Character state tracker")
@@ -175,3 +209,27 @@ class StoryState(BaseModel):
     key_discoveries: List[str] = Field(default_factory=list, description="Key discoveries")
     foreshadowing_clues: List[ForeshadowingClue] = Field(default_factory=list, description="Master foreshadowing, suspense and clue tracker")
     character_relationships: List[CharacterRelation] = Field(default_factory=list, description="Dynamic character relationship network")
+
+
+class ChapterMemory(BaseModel):
+    """Structured facts extracted from a finished chapter."""
+    recap: str = Field(default="", description="What happened and what changed")
+    opened_threads: List[str] = Field(default_factory=list)
+    closed_threads: List[str] = Field(default_factory=list)
+    character_conditions: List[CharacterCondition] = Field(default_factory=list)
+    relationships: List[CharacterRelation] = Field(default_factory=list)
+    clues_escalated: List[str] = Field(default_factory=list)
+    clues_resolved: List[str] = Field(default_factory=list)
+    secrets: List[Dict[str, Any]] = Field(default_factory=list)
+    discoveries: List[str] = Field(default_factory=list)
+
+
+class PublishingKit(BaseModel):
+    subtitle: str = Field(default="", description="Optional subtitle")
+    tagline: str = Field(default="", description="One line for the cover or ads")
+    blurb: str = Field(default="", description="Back-cover and store description")
+    kdp_keywords: List[str] = Field(default_factory=list, description="Seven search phrases")
+    bisac_categories: List[str] = Field(default_factory=list, description="Suggested retail categories")
+    comparable_titles: List[str] = Field(default_factory=list, description="Comparable titles for positioning; must be verified by a human")
+    cover_brief: str = Field(default="", description="Direction for a cover designer")
+    launch_plan: List[str] = Field(default_factory=list, description="Concrete launch actions")

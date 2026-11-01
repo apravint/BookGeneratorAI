@@ -1,186 +1,262 @@
 """
 Prose Drafter Agent - Phase 2
-Writes high-pacing chapter manuscript prose using iterative Beat-by-Beat (Scene) generation.
-Prevents context token overflow and produces deep, multi-thousand word chapters per beat schedule.
+Writes chapters scene by scene with verbatim continuity from the preceding prose,
+and revises only the scenes editors flag so strong work is never thrown away.
 """
 
 import re
-from schemas.models import WorldBible, CharacterRegistry, ChapterBeat, StoryState, RevisionBrief, SubBeat
+from typing import Callable, List, Optional
+from schemas.models import WorldBible, CharacterRegistry, ChapterBeat, StoryState, RevisionBrief, SubBeat, BookBrief, SceneNote
 from generator.llm_client import LlmClient
 from prompts.system_prompts import PROSE_DRAFTER_PROMPT, TAMIL_PROSE_DRAFTER_PROMPT
+
+SCENE_BREAK = "* * *"
+MIN_LENGTH_RATIO = 0.85
+MAX_LENGTH_RETRIES = 2
+PROSE_TAIL_CHARS = 3000
+RECENT_CHAPTERS_IN_FULL = 3
+OLDER_RECAP_CHARS = 200
+FICTION_CRAFT = """1. **Enter late, leave early:** Start in motion. Cut throat-clearing and arrivals.
+2. **Show, Don't Tell & Deep POV:** Anchor the narrative in concrete sensory details and immediate action. Ban filter words ("she saw that", "he felt", "noticed that").
+3. **Sentence Rhythm:** Vary sentence lengths because the moment demands it, not on a schedule.
+4. **Three-Layer Dialogue:** Characters speak in distinct voices and rarely say exactly what they mean. Use interruptions and evasions. Use action beats between lines.
+5. **Specificity:** Prefer the odd, exact detail a reader could not have predicted. Do not reuse images from the preceding text.
+6. **No Moralizing Conclusions:** End on action, dialogue or a turn. Never summarize the emotional meaning or hint about the future."""
+NONFICTION_CRAFT = """1. **Lead with a story or a surprise:** Open on a specific moment, then earn the idea from it.
+2. **Truth:** Never invent statistics, studies, quotations, named people or events. Use only what you are certain is real. If a fact needs checking, write it followed by [VERIFY: what to check]. Label hypothetical examples as hypothetical.
+3. **One idea, deeply:** Prefer a single non-obvious insight, developed, over a list of tips.
+4. **Direct address:** Write to one intelligent reader. Plain words. No corporate jargon.
+5. **Usefulness:** Leave the reader with something they can see or do differently.
+6. **No Moralizing Conclusions:** Do not end by restating the point. End on a turn that pulls the reader onward."""
 
 
 class ProseDrafterAgent:
     def __init__(self, llm_client: LlmClient):
         self.llm = llm_client
 
-    def draft_chapter(
+    def draft_scenes(
         self,
         chapter_beat: ChapterBeat,
         world_bible: WorldBible,
         registry: CharacterRegistry,
         story_state: StoryState,
-        revision_brief: RevisionBrief = None
+        brief: BookBrief,
+        existing_scenes: Optional[List[str]] = None,
+        on_scene: Optional[Callable[[List[str]], None]] = None,
+        previous_chapter_tail: str = "",
+        opening_candidates: int = 1,
+        choose_opening: Optional[Callable[[List[str]], str]] = None,
+    ) -> List[str]:
+        scenes = list(existing_scenes or [])
+        total = len(chapter_beat.sub_beats)
+        print(f"  [Agent: Prose Drafter] Drafting Chapter {chapter_beat.chapter_number}: {chapter_beat.title} ({total} scenes)...")
+
+        for index, sub_beat in enumerate(chapter_beat.sub_beats):
+            if index < len(scenes):
+                continue
+            tail = scenes[-1][-PROSE_TAIL_CHARS:] if scenes else previous_chapter_tail
+            prompt = self._scene_prompt(chapter_beat, sub_beat, world_bible, registry, story_state, brief, tail)
+            count = opening_candidates if index == 0 and choose_opening else 1
+            candidates = [self._write_scene(prompt, chapter_beat, world_bible) for _ in range(count)]
+            scene = choose_opening(candidates) if count > 1 else candidates[0]
+            scenes.append(scene)
+            print(f"    -> Beat {sub_beat.section_number} ({len(scene.split())} words)...")
+            if on_scene:
+                on_scene(scenes)
+        return scenes
+
+    def revise_scene(
+        self,
+        chapter_beat: ChapterBeat,
+        scene_index: int,
+        scenes: List[str],
+        notes: List[SceneNote],
+        revision_brief: RevisionBrief,
+        world_bible: WorldBible,
+        registry: CharacterRegistry,
+        story_state: StoryState,
+        brief: BookBrief,
     ) -> str:
-        is_tamil = getattr(world_bible, 'language', 'english').lower() in ["tamil", "ta"]
+        sub_beat = chapter_beat.sub_beats[scene_index]
+        note_lines = "\n".join(f"- {n.problem} -> {n.fix}" for n in notes)
+        continuity = "\n".join(f"- {c.description} -> {c.remedy}" for c in revision_brief.continuity_issues)
+        before = scenes[scene_index - 1][-1500:] if scene_index else ""
+        after = scenes[scene_index + 1][:800] if scene_index + 1 < len(scenes) else ""
+        prompt = f"""TASK: scene revision
+Rewrite the scene below so a demanding editor would keep reading. Keep every plot event and fact. Keep what works; change what the notes name.
+
+Voice guide: {brief.voice_guide}
+{self._language_line(world_bible)}
+Scene purpose: {sub_beat.scene_objective} / {sub_beat.key_interaction}
+Must preserve: {revision_brief.strengths}
+
+EDITOR NOTES:
+{note_lines}
+{("CONTINUITY FIXES:" + chr(10) + continuity) if continuity else ""}
+
+TEXT JUST BEFORE THIS SCENE:
+{before or "(chapter opening)"}
+
+SCENE TO REWRITE:
+{scenes[scene_index]}
+
+TEXT JUST AFTER THIS SCENE (must still follow naturally):
+{after or "(chapter ending)"}
+
+Return only the rewritten scene prose. No headings, labels or commentary.
+"""
+        return self._write_scene(prompt, chapter_beat, world_bible)
+
+    def assemble_chapter(self, chapter_beat: ChapterBeat, scenes: List[str], brief: BookBrief, include_part: bool = False, language: str = "english") -> str:
+        is_tamil = language.lower() in ["tamil", "ta"]
+        label = "அத்தியாயம்" if is_tamil else "Chapter"
+        lines = []
+        if include_part and chapter_beat.part_title:
+            lines.append(f"# {chapter_beat.part_title}\n")
+        lines.append(f"## {label} {chapter_beat.chapter_number}: {chapter_beat.title}\n")
+        if brief.is_fiction:
+            lines.append(f"\n\n{SCENE_BREAK}\n\n".join(scenes))
+        else:
+            for sub_beat, scene in zip(chapter_beat.sub_beats, scenes):
+                heading = sub_beat.heading or sub_beat.scene_objective
+                lines.append(f"### {heading}\n\n{scene}\n")
+        return "\n".join(lines).strip() + "\n"
+
+    def _write_scene(self, prompt: str, chapter_beat: ChapterBeat, world_bible: WorldBible) -> str:
+        is_tamil = self._is_tamil(world_bible)
         system_prompt = TAMIL_PROSE_DRAFTER_PROMPT if is_tamil else PROSE_DRAFTER_PROMPT
-        lang_constraint = "CRITICAL MANDATE: WRITE ALL MANUSCRIPT PROSE 100% IN FLUENT, ELEGANT, GRAMMATICALLY CORRECT TAMIL SCRIPT (தமிழ் எழுத்துக்கள்). DO NOT USE ENGLISH WORDS." if is_tamil else "Write in English."
+        target = self._scene_words(chapter_beat)
+        # Tamil script costs roughly twice the tokens per word
+        max_tokens = max(2048, target * (6 if is_tamil else 3))
+        scene = self._clean_scene(self.llm.generate_text(prompt, system_prompt=system_prompt, max_tokens=max_tokens))
+        for _ in range(MAX_LENGTH_RETRIES):
+            if len(scene.split()) >= target * MIN_LENGTH_RATIO:
+                break
+            extended = self.llm.generate_text(
+                f"{prompt}\n\nYour last version ran only {len(scene.split())} words. Write the complete scene at about {target} words by deepening the conflict and detail. Do not pad.\n\nLAST VERSION:\n{scene}",
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+            )
+            extended = self._clean_scene(extended)
+            if len(extended.split()) > len(scene.split()):
+                scene = extended
+        return scene
 
-        # Construct Character Voices Context
-        char_voices = "\n".join([
-            f"- {c.name} ({c.role}): Tone={c.voice_fingerprint.tone}, Sentence Rhythm={c.voice_fingerprint.sentence_structure}, Taboo Words={c.voice_fingerprint.taboo_phrases}"
-            for c in registry.characters
-        ])
+    def _scene_prompt(self, chapter_beat, sub_beat: SubBeat, world_bible, registry, story_state, brief: BookBrief, tail: str) -> str:
+        craft = FICTION_CRAFT if brief.is_fiction else NONFICTION_CRAFT
+        return f"""TASK: scene draft
+**Role:** You are writing {world_bible.title}, a {world_bible.genre} book.
+{self._language_line(world_bible)}
 
-        # Dynamic Knowledge Graph, Relationships & Foreshadowing Context
-        kg_lines = []
-        if story_state:
-            if story_state.active_plot_threads:
-                kg_lines.append(f"* Active Plot Loops: {', '.join(story_state.active_plot_threads[:4])}")
-            if getattr(story_state, "character_conditions", None):
-                conds = [
-                    f"{name}: [Status={cond.physical_wounds_or_status}, Items={cond.inventory_items}, Emotion={cond.emotional_state}]"
-                    for name, cond in story_state.character_conditions.items()
-                ]
-                if conds:
-                    kg_lines.append(f"* Character Living State: {'; '.join(conds[:3])}")
-            if getattr(story_state, "character_relationships", None):
-                rels = [
-                    f"{r.source_char} <-> {r.target_char} ({r.relation_type}, Affinity={r.affinity_score}/10, Dynamic='{r.dynamic_status}')"
-                    for r in story_state.character_relationships[:4]
-                ]
-                if rels:
-                    kg_lines.append(f"* Active Relationships & Social Dynamics: {'; '.join(rels)}")
-            if getattr(story_state, "foreshadowing_clues", None):
-                curr_num = chapter_beat.chapter_number
-                due = [c for c in story_state.foreshadowing_clues if c.status in ["planted", "escalated"] and c.target_payoff_chapter == curr_num]
-                active = [c for c in story_state.foreshadowing_clues if c.status in ["planted", "escalated"] and c.target_payoff_chapter != curr_num]
-                if due:
-                    due_desc = "; ".join([f"'{d.name}' ({d.description})" for d in due])
-                    kg_lines.append(f"* MANDATORY CLUE PAYOFFS FOR THIS CHAPTER: Resolve or expose: {due_desc}")
-                if active:
-                    active_desc = "; ".join([f"'{a.name}' (Planted Ch.{a.planted_chapter}, due Ch.{a.target_payoff_chapter})" for a in active[:3]])
-                    kg_lines.append(f"* Active Background Suspense Hooks: {active_desc}")
-            if getattr(story_state, "epistemic_secrets", None):
-                secr = [
-                    f"'{s.get('fact')}': known to {s.get('known_by')}, HIDDEN from {s.get('hidden_from')}"
-                    for s in story_state.epistemic_secrets[:2]
-                ]
-                if secr:
-                    kg_lines.append(f"* Secret/Epistemic Rules: {'; '.join(secr)}")
-        knowledge_graph_context = "\n".join(kg_lines) if kg_lines else "* All initial plot threads unfolding normally."
+**Book:** {brief.logline}
+**Promise to the reader:** {brief.reader_promise}
+**Voice guide:** {brief.voice_guide}
+**Voice sample (match the voice, never reuse the words):**
+{brief.voice_sample}
 
-        revision_context = ""
-        if revision_brief and not revision_brief.passed_audit:
-            revision_context = f"""
-=== CRITICS' MANDATORY REVISION DIRECTIVES ===
-Overall Directive: {revision_brief.editor_overall_directive}
-Continuity Issues to Fix: {[f'{c.location}: {c.description} -> Fix: {c.remedy}' for c in revision_brief.continuity_issues]}
-Slop Violations to Remove: {[f'{s.phrase_or_pattern}: {s.reason}' for s in revision_brief.slop_violations]}
-"""
+**Setting:** {world_bible.setting_overview} ({world_bible.time_period})
+**World Rules:** {[r.rule_name + ': ' + r.narrative_consequence for r in world_bible.rules]}
+**People in this scene:**
+{self._cast_context(registry, sub_beat)}
+**Story State:**
+{self._knowledge_context(chapter_beat, story_state)}
+**Story So Far:**
+{self._story_so_far(story_state)}
 
-        chapter_sections = []
-        running_chapter_context = ""
-        total_sub_beats = len(chapter_beat.sub_beats)
+**Prose immediately before this scene (continue seamlessly; do not repeat it):**
+{tail or "Nothing yet. This is the first page of the book, the page a browsing reader decides on. Make it impossible to put down."}
 
-        genre_voice_guide = ""
-        if world_bible.genre in ["psychology_of_money", "money_psychology", "behavioral_finance"] or "psychology" in world_bible.genre.lower() or "psychology" in world_bible.title.lower():
-            genre_voice_guide = """
-* **Narrative Non-Fiction Voice (Morgan Housel Style):**
-  - Channel the masterly, story-driven, observational voice of Morgan Housel (*The Psychology of Money*).
-  - Open with or center upon a vivid historical parable, character contrast, or real-world case study.
-  - Emphasize human behavior over spreadsheet math: ego, envy, patience, compounding, and sovereignty over time.
-  - Deliver timeless, counter-intuitive psychological insights with crisp, punchy prose.
-"""
-
-        print(f"  [Agent: Prose Drafter] Drafting Chapter {chapter_beat.chapter_number}: {chapter_beat.title} ({total_sub_beats} sub-beats)...")
-
-        for idx, sub_beat in enumerate(chapter_beat.sub_beats, start=1):
-            beat_label = f"{chapter_beat.chapter_number}.{idx}"
-            btype = getattr(sub_beat, 'beat_type', 'SCENE_GOAL')
-            tension = getattr(sub_beat, 'micro_tension_level', 5)
-            subtext = getattr(sub_beat, 'pov_internal_state', 'Focused on scene goal with suppressed doubts.')
-
-            user_prompt = f"""**Role:** You are an elite, award-winning author specializing in {world_bible.genre} genre. Your prose is immersive, realistic, and character-driven.
-{lang_constraint}
-
-**Task:** Write Scene Beat {beat_label} (approx. 600-900 words) fulfilling the narrative beats provided below. Do NOT write conversational preambles or meta commentary; write only the specified manuscript prose.
-
-**Context Guidelines (The Codex):**
-* **Genre Style Guide:** Genre={world_bible.genre.upper()}. Setting={world_bible.setting_overview}. World Rules={[r.rule_name + ': ' + r.narrative_consequence for r in world_bible.rules[:3]]}
-{genre_voice_guide}
-* **Active Characters:**
-{char_voices}
-* **Dynamic Knowledge Graph & State:**
-{knowledge_graph_context}
-* **Story So Far (Preceding Chapters):**
-{story_state.story_so_far_summary[-1200:] if story_state.story_so_far_summary else "This is Chapter 1 - Opening chapter."}
-
-**Scene Continuity So Far (Current Chapter):**
-{running_chapter_context[-1500:] if running_chapter_context else "Beginning of Chapter " + str(chapter_beat.chapter_number) + "."}
-
-**Current Scene Micro-Beat to Execute ({beat_label}):**
+**Write this scene ({sub_beat.section_number}, about {self._scene_words(chapter_beat)} words):**
 Chapter {chapter_beat.chapter_number}: {chapter_beat.title}
-POV Character: {chapter_beat.pov_character}
+Chapter must achieve: {chapter_beat.core_narrative_arc}
+Point of view: {chapter_beat.pov_character}
 Location: {chapter_beat.location}
-Dramatic Beat Type: {btype}
-Micro-Tension Level: {tension}/10
-POV Internal Subtext: {subtext}
-Scene Section: {sub_beat.section_number}
-Scene Objective: {sub_beat.scene_objective}
-Key Interaction / Conflict: {sub_beat.key_interaction}
-Sensory & Structural Detail: {sub_beat.sensory_or_structural_detail}
-Ending Transition Hook: {sub_beat.ending_hook}
-{revision_context}
+Beat type: {sub_beat.beat_type}; tension {sub_beat.micro_tension_level}/10
+Objective: {sub_beat.scene_objective}
+The turn: {sub_beat.key_interaction}
+Under the surface: {sub_beat.pov_internal_state}
+Specific detail: {sub_beat.sensory_or_structural_detail}
+End on: {sub_beat.ending_hook}
+{self._clue_directive(chapter_beat, story_state)}
 
-**Strict Execution Constraints:**
-1. **Show, Don't Tell & Deep POV:** Anchor the narrative in concrete sensory details and immediate character action. Ban filter words ("she saw that", "he felt", "noticed that").
-2. **Gary Provost Sentence Rhythm:** Relentlessly vary sentence lengths. Mix punchy 2-5 word statements with expansive 25+ word rhythmic sentences. Avoid monotonous mid-length phrasing.
-3. **Three-Layer Dialogue:** Characters must speak with distinct voices based on their profiles. Layer spoken lines with unspoken subtext and physical action beats between dialogue.
-4. **Dramatic Beat Adherence:** Fulfill the assigned dramatic beat type ({btype}) at tension level {tension}/10.
-5. **Language Integrity:** {lang_constraint}
-6. **Banish AI Slop:** Strictly forbidden from using generic LLM clichés: "a tapestry of," "a testament to," "shivers down her spine," "ஒரு சான்றாக அமைந்தது", "முதுகெலும்பில் நடுக்கம்", "echoed in the silence".
-7. **No Moralizing Conclusions:** End the scene precisely on the final beat provided. Do not append a concluding paragraph that summarizes the scene's emotional weight or hints at the future.
-8. **Section Heading:** Start the section with a clean markdown heading: `### {sub_beat.section_number} {sub_beat.scene_objective}`.
+**Craft:**
+{craft}
+7. **Banish AI Slop:** Forbidden: "a tapestry of," "a testament to," "shivers down her spine," "ஒரு சான்றாக அமைந்தது", "முதுகெலும்பில் நடுக்கம்", "echoed in the silence," and the "it wasn't X, it was Y" construction.
+
+Return only the prose. No headings, labels or commentary.
 """
-            scene_raw = self.llm.generate_text(user_prompt, system_prompt=system_prompt, max_tokens=2048)
-            clean_scene = self._post_process_scene(scene_raw, sub_beat)
 
-            words_count = len(clean_scene.split())
-            print(f"    -> Drafting Chapter {chapter_beat.chapter_number}/{12} -> Beat {beat_label}/{chapter_beat.chapter_number}.{total_sub_beats} ({words_count} words)...")
+    @staticmethod
+    def _scene_words(chapter_beat: ChapterBeat) -> int:
+        return chapter_beat.target_word_count // max(len(chapter_beat.sub_beats), 1)
 
-            chapter_sections.append(clean_scene)
-            running_chapter_context += f"\n\n{clean_scene}"
+    @staticmethod
+    def _is_tamil(world_bible: WorldBible) -> bool:
+        return getattr(world_bible, 'language', 'english').lower() in ["tamil", "ta"]
 
-        full_chapter_text = f"## Chapter {chapter_beat.chapter_number}: {chapter_beat.title}\n\n" + "\n\n".join(chapter_sections)
-        return full_chapter_text
+    def _language_line(self, world_bible: WorldBible) -> str:
+        if self._is_tamil(world_bible):
+            return "CRITICAL MANDATE: WRITE ALL MANUSCRIPT PROSE 100% IN FLUENT, ELEGANT, GRAMMATICALLY CORRECT TAMIL SCRIPT (தமிழ் எழுத்துக்கள்). DO NOT USE ENGLISH WORDS."
+        return "Write in English."
 
-    def _post_process_scene(self, raw_text: str, sub_beat: SubBeat) -> str:
-        lines = raw_text.split('\n')
-        clean_lines = []
-        skip_intro = True
+    @staticmethod
+    def _cast_context(registry: CharacterRegistry, sub_beat: SubBeat) -> str:
+        present = {name.lower() for name in sub_beat.characters_present}
+        chars = [c for c in registry.characters if c.name.lower() in present] or registry.characters
+        return "\n".join(
+            f"- {c.name} ({c.role}): Wants={c.core_motivation}; Flaw={c.fatal_flaw}; Tone={c.voice_fingerprint.tone}; "
+            f"Rhythm={c.voice_fingerprint.sentence_structure}; Signature={c.voice_fingerprint.frequently_used_terms}; Never says={c.voice_fingerprint.taboo_phrases}"
+            for c in chars
+        ) or "- Real people and cases only, as named in this scene's objective."
 
-        for line in lines:
-            s = line.strip()
-            if skip_intro:
-                if re.match(r'^(okay|here is|i have|based on|sure|certainly|let\'s|below is|in this chapter|i will proceed|i am ready)', s, re.IGNORECASE):
-                    continue
-                if s.startswith('---'):
-                    continue
-                if not s:
-                    continue
-                skip_intro = False
+    @staticmethod
+    def _story_so_far(story_state: StoryState) -> str:
+        if not story_state.chapter_recaps:
+            return "This is the opening."
+        ordered = sorted(story_state.chapter_recaps.items())
+        recent_from = len(ordered) - RECENT_CHAPTERS_IN_FULL
+        return "\n".join(
+            f"Ch.{num}: {recap if i >= recent_from else recap[:OLDER_RECAP_CHARS]}"
+            for i, (num, recap) in enumerate(ordered)
+        )
 
-            # Clean meta-prompt leakage
-            cleaned = re.sub(r'Sub-section \d+\.\d+:\s*(Execute core objective|Interaction:|Detail:)[^\n]*', '', line, flags=re.IGNORECASE)
-            cleaned = re.sub(r'(Core Objective:|Interaction:|Detail:)\s*[^\n]*', '', cleaned, flags=re.IGNORECASE)
-            clean_lines.append(cleaned)
+    @staticmethod
+    def _knowledge_context(chapter_beat: ChapterBeat, story_state: StoryState) -> str:
+        lines = []
+        if story_state.active_plot_threads:
+            lines.append(f"* Open threads: {'; '.join(story_state.active_plot_threads)}")
+        if story_state.character_conditions:
+            conds = [
+                f"{name}: status={c.physical_wounds_or_status}, holding={c.inventory_items}, feeling={c.emotional_state}, at={c.current_location}"
+                for name, c in story_state.character_conditions.items()
+            ]
+            lines.append(f"* Character state: {'; '.join(conds)}")
+        if story_state.character_relationships:
+            rels = [f"{r.source_char} <-> {r.target_char} ({r.relation_type}, {r.affinity_score}/10: {r.dynamic_status})" for r in story_state.character_relationships]
+            lines.append(f"* Relationships: {'; '.join(rels)}")
+        if story_state.epistemic_secrets:
+            secrets = [f"'{s.get('fact')}' known to {s.get('known_by')}, hidden from {s.get('hidden_from')}" for s in story_state.epistemic_secrets]
+            lines.append(f"* Who knows what: {'; '.join(secrets)}")
+        if story_state.key_discoveries:
+            lines.append(f"* Already established (do not re-explain): {'; '.join(story_state.key_discoveries[-15:])}")
+        return "\n".join(lines) or "* Nothing established yet."
 
-        scene_text = "\n".join(clean_lines).strip()
-        
-        # Ensure section heading is present
-        heading_prefix = f"### {sub_beat.section_number}"
-        if not scene_text.startswith("###"):
-            scene_text = f"{heading_prefix} {sub_beat.scene_objective}\n\n" + scene_text
+    @staticmethod
+    def _clue_directive(chapter_beat: ChapterBeat, story_state: StoryState) -> str:
+        by_name = {c.name: c for c in story_state.foreshadowing_clues}
+        plant = [f"'{n}' ({by_name[n].description})" for n in chapter_beat.foreshadowing_clues_to_plant if n in by_name]
+        pay = [f"'{n}' ({by_name[n].description})" for n in chapter_beat.foreshadowing_clues_to_resolve if n in by_name]
+        lines = []
+        if plant:
+            lines.append(f"This chapter must quietly plant, without drawing attention: {'; '.join(plant)}")
+        if pay:
+            lines.append(f"This chapter must pay off: {'; '.join(pay)}")
+        return "\n".join(lines)
 
-        return scene_text
+    @staticmethod
+    def _clean_scene(raw_text: str) -> str:
+        lines = raw_text.strip().split('\n')
+        while lines and (lines[0].lstrip().startswith('#') or not lines[0].strip()):
+            lines.pop(0)
+        text = "\n".join(lines).strip()
+        return re.sub(r'\n{3,}', '\n\n', text)

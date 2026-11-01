@@ -1,297 +1,82 @@
 #!/usr/bin/env python3
 """
-BookGenerator AI Engine v4.0 - Multi-Agent Adversarial Pipeline
-Hierarchical Multi-Agent Architecture with Context Isolation, Iterative Beat-by-Beat Drafting,
-Adversarial Anti-Slop Critics, Database Reset Flag, and Local Ollama Integration.
+BookGenerator AI Engine - Command Line Interface
+Runs the multi-agent pipeline: brief, world, cast, outline, scene drafting, editorial revision,
+whole-book release review, publishing kit and DOCX/EPUB compilation.
 """
 
 import argparse
 import os
-import sys
-import glob
-from pathlib import Path
 from generator.llm_client import LlmClient
-from memory.state_manager import StateManager
-from schemas.models import StoryState
-from agents.world_builder import WorldBuilderAgent
-from agents.character_architect import CharacterArchitectAgent
-from agents.master_outliner import MasterOutlinerAgent
-from agents.prose_drafter import ProseDrafterAgent
-from agents.critics import MasterAdversarialReviewer
-from tools.file_writer import FileWriterTool
-from tools.card_manager import CardManager
-
-
-def reset_environment(db_path: str = "memory/book_state.db", output_dir: str = "output"):
-    """Wipes state database and cleans output directory to prevent state corruption."""
-    print("  [Environment Reset] Wiping state database and cleaning output files...")
-    if os.path.exists(db_path):
-        try:
-            os.remove(db_path)
-            print(f"  ✓ Database file '{db_path}' removed.")
-        except Exception as e:
-            print(f"  ⚠️ Warning removing database: {e}")
-
-    if os.path.exists(output_dir):
-        for f in glob.glob(os.path.join(output_dir, "*.md")) + glob.glob(os.path.join(output_dir, "*.docx")):
-            try:
-                os.remove(f)
-                print(f"  ✓ Output file '{os.path.basename(f)}' cleaned.")
-            except Exception as e:
-                print(f"  ⚠️ Warning cleaning file '{f}': {e}")
+from pipeline import BookConfig, BookPipeline, book_dir_for
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="BookGenerator AI v4.0: Production-Grade Multi-Agent Manuscript Generation Engine."
-    )
+    parser = argparse.ArgumentParser(description="BookGenerator AI: multi-agent manuscript generation engine.")
     parser.add_argument("--title", "-t", required=True, help="Title of the book")
-    parser.add_argument("--concept", "-c", default="", help="Seed concept or prompt for the book")
-    parser.add_argument("--genre", "-g", default="auto", help="Genre: fiction, romance, business, self-help, technical, non-fiction, tamil_historical, tamil_kavithai, tamil_thirukkural, tamil_fiction")
-    parser.add_argument("--author", "-a", default="Pravin Tamilan", help="Author Name (default: 'Pravin Tamilan')")
-    parser.add_argument("--language", "-l", default="tamil", choices=["english", "tamil", "auto"], help="Target language: english, tamil, auto (default: 'tamil')")
-    parser.add_argument("--tamil", action="store_true", help="Shortcut preset flag to generate rich authentic Tamil content")
-    parser.add_argument("--provider", "-p", default=None, choices=["auto", "ollama", "jev", "openai", "gemini", "anthropic"], help="LLM Provider (default: auto-detected from environment)")
-    parser.add_argument("--model", "-m", default=None, help="Model name (e.g. gemini-3.5-flash-lite, qwen2.5:1.5b, gpt-4o)")
-    parser.add_argument("--chapters", "-n", type=int, default=12, help="Number of chapters to generate (default: 12)")
+    parser.add_argument("--concept", "-c", default="", help="Seed concept. The more specific and original, the better the book")
+    parser.add_argument("--genre", "-g", default="auto", help="Genre: fiction, romance, thriller, business, self-help, technical, non-fiction, tamil_historical, tamil_kavithai, tamil_thirukkural, tamil_fiction")
+    parser.add_argument("--author", "-a", default="Pravin Tamilan", help="Author name (default: 'Pravin Tamilan')")
+    parser.add_argument("--language", "-l", default="english", choices=["english", "tamil"], help="Target language (default: english)")
+    parser.add_argument("--tamil", action="store_true", help="Shortcut for --language tamil")
+    parser.add_argument("--provider", "-p", default=None, choices=["auto", "ollama", "jev", "openai", "gemini", "anthropic"], help="LLM provider (default: auto-detected from environment)")
+    parser.add_argument("--model", "-m", default=None, help="Model name")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama server URL")
-    parser.add_argument("--max-revisions", type=int, default=1, help="Max adversarial critic revision loops per chapter")
-    parser.add_argument("--output", "-o", default="Generated_Book.docx", help="Output .docx file path")
-    parser.add_argument("--epub", default=None, help="Output .epub file path (default: auto-named from output)")
-    parser.add_argument("--reset", "-r", action="store_true", help="Reset state database and output directory before run")
-    parser.add_argument("--resume", action="store_true", default=True, help="Resume generation skipping previously completed chapters (default: True)")
-    parser.add_argument("--export-cards", default=None, help="Directory to export portable character cards and lorebook JSON (MuMu style)")
-    parser.add_argument("--import-lorebook", default=None, help="Path to pre-existing lorebook JSON pack to import World Bible & Characters from")
-
+    parser.add_argument("--chapters", "-n", type=int, default=24, help="Number of chapters (default: 24)")
+    parser.add_argument("--scenes-per-chapter", type=int, default=4, help="Scenes in each chapter (default: 4)")
+    parser.add_argument("--target-words", type=int, default=80000, help="Whole-book word target (default: 80000)")
+    parser.add_argument("--max-revisions", type=int, default=2, help="Max revision passes per chapter (default: 2)")
+    parser.add_argument("--opening-candidates", type=int, default=3, help="Competing drafts of the book's first scene (default: 3)")
+    parser.add_argument("--output", "-o", default=None, help="Output .docx path (default: inside the book's directory)")
+    parser.add_argument("--epub", default=None, help="Output .epub path (default: next to the .docx)")
+    parser.add_argument("--cover", default=None, help="Cover image (.jpg) for the EPUB")
+    parser.add_argument("--subtitle", default=None, help="Subtitle for the title page")
+    parser.add_argument("--isbn", default=None, help="Your ISBN. Omitted when not provided")
+    parser.add_argument("--publisher", default=None, help="Publisher or imprint name. Omitted when not provided")
+    parser.add_argument("--year", default=None, help="Copyright year (default: current year)")
+    parser.add_argument("--dedication", default=None, help="Dedication text. Omitted when not provided")
+    parser.add_argument("--author-bio", default=None, help="About the Author text. Omitted when not provided")
+    parser.add_argument("--reset", "-r", action="store_true", help="Delete this book's saved progress and start it over. Other books are untouched")
+    parser.add_argument("--export-cards", default=None, help="Directory to export portable character cards and lorebook JSON")
+    parser.add_argument("--import-lorebook", default=None, help="Lorebook JSON pack to import World Bible & Characters from")
     args = parser.parse_args()
 
-    concept = args.concept or args.title
     language = "tamil" if args.tamil else args.language
 
-    # Auto-resolve provider if not explicitly passed
     resolved_provider = args.provider
     if not resolved_provider or resolved_provider == "auto":
         resolved_provider = "gemini" if (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")) else "ollama"
 
-    if args.reset:
-        reset_environment(db_path="memory/book_state.db", output_dir="output")
-
-    # Initialize Clients & State Manager early to display resolved model
-    llm_client = LlmClient(
-        provider=resolved_provider,
-        model=args.model,
-        ollama_url=args.ollama_url
-    )
+    llm_client = LlmClient(provider=resolved_provider, model=args.model, ollama_url=args.ollama_url)
 
     print("\n" + "=" * 80)
-    print("  BOOKGENERATOR AI v4.0 - PRODUCTION-GRADE MULTI-AGENT PIPELINE")
+    print("  BOOKGENERATOR AI - MULTI-AGENT PIPELINE")
     print("=" * 80)
     print(f" Title:        {args.title}")
     print(f" Author:       {args.author}")
     print(f" Genre:        {args.genre.upper()}")
-    print(f" Language:     {language.upper()} (தமிழ்)")
+    print(f" Language:     {language.upper()}")
     print(f" Provider:     {llm_client.provider.upper()}")
     print(f" Model:        {llm_client.model}")
-    print(f" Chapters:     {args.chapters}")
-    if llm_client.provider == "ollama":
-        print(f" Ollama URL:   {args.ollama_url}")
-    print(f" Output File:  {args.output}")
-    print(f" Reset Flag:   {args.reset}")
+    print(f" Plan:         {args.chapters} chapters, {args.scenes_per_chapter} scenes each, {args.target_words:,} words")
+    print(f" Book Folder:  {book_dir_for(args.title)}")
     print("=" * 80 + "\n")
 
-    state_mgr = StateManager(db_path="memory/book_state.db")
-    file_writer = FileWriterTool(output_dir="output")
-    file_writer.ensure_front_matter(
-        title=args.title,
-        domain=concept,
-        author=args.author,
-        language=language
+    publishing = {
+        key: value for key, value in {
+            "subtitle": args.subtitle, "isbn": args.isbn, "publisher": args.publisher,
+            "year": args.year, "dedication": args.dedication, "author_bio": args.author_bio,
+        }.items() if value
+    }
+    config = BookConfig(
+        title=args.title, author=args.author, concept=args.concept, genre=args.genre, language=language,
+        chapters=args.chapters, scenes_per_chapter=args.scenes_per_chapter, target_words=args.target_words,
+        max_revisions=args.max_revisions, opening_candidates=args.opening_candidates,
+        output=args.output, epub=args.epub, cover=args.cover, reset=args.reset,
+        export_cards=args.export_cards, import_lorebook=args.import_lorebook, publishing=publishing,
     )
-
-    # 2. PHASE 1: Foundation (Architect Agents)
-    print("PHASE 1: Foundation Setup (Architect Agents)...")
-    
-    existing_world = state_mgr.get_world_bible() if not args.reset else None
-    existing_chars = state_mgr.get_character_registry() if not args.reset else None
-    existing_outline = state_mgr.get_master_outline() if not args.reset else None
-
-    if existing_world and existing_chars and existing_outline:
-        print("  [State Manager] Found existing foundation in database. Resuming book...")
-        world_bible = existing_world
-        character_registry = existing_chars
-        master_outline = existing_outline
-        print(f"  ✓ World Bible: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined, Language: {world_bible.language}).")
-        print(f"  ✓ Character Registry: {len(character_registry.characters)} characters loaded.")
-        print(f"  ✓ Master Outline: {len(master_outline.chapters)} chapter beat sheets loaded.")
-    elif args.import_lorebook and os.path.exists(args.import_lorebook):
-        print(f"  [Lorebook Import] Loading World Bible and Characters from '{args.import_lorebook}'...")
-        world_bible, character_registry, imported_relations = CardManager.import_lorebook(args.import_lorebook)
-        state_mgr.save_world_bible(world_bible)
-        state_mgr.save_character_registry(character_registry)
-        init_state = state_mgr.get_story_state()
-        if imported_relations:
-            init_state.character_relationships.extend(imported_relations)
-            state_mgr.save_story_state(init_state)
-        print(f"  ✓ Imported: '{world_bible.title}', {len(character_registry.characters)} characters, {len(imported_relations)} relations.")
-
-        outliner = MasterOutlinerAgent(llm_client)
-        print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
-        master_outline = outliner.build_outline(world_bible, character_registry, language=language)
-        state_mgr.save_master_outline(master_outline)
-        print(f"  ✓ Master Outline Created: {len(master_outline.chapters)} chapter beat sheets scaffolded.")
-    else:
-        world_builder = WorldBuilderAgent(llm_client)
-        print("  [Agent: World Builder] Generating structured World Bible...")
-        world_bible = world_builder.build_world(seed_title=args.title, seed_concept=concept, genre=args.genre, language=language)
-        state_mgr.save_world_bible(world_bible)
-        print(f"  ✓ World Bible Created: '{world_bible.title}' ({len(world_bible.rules)} hard rules defined, Language: {world_bible.language}).")
-
-        char_architect = CharacterArchitectAgent(llm_client)
-        print("  [Agent: Character Architect] Developing Character Registry & Voice Fingerprints...")
-        character_registry = char_architect.build_characters(world_bible, author_name=args.author, language=language)
-        state_mgr.save_character_registry(character_registry)
-        print(f"  ✓ Character Registry Created: {len(character_registry.characters)} characters initialized.")
-
-        outliner = MasterOutlinerAgent(llm_client)
-        print("  [Agent: Master Outliner] Generating 4-Part, 12-Chapter Beat Sheets...")
-        master_outline = outliner.build_outline(world_bible, character_registry, language=language)
-        state_mgr.save_master_outline(master_outline)
-        print(f"  ✓ Master Outline Created: {len(master_outline.chapters)} chapter beat sheets scaffolded.")
-
-    # 3. PHASE 2 & 3: Execution & Adversarial Revision Loop
-    print("\nPHASE 2 & 3: Execution & Adversarial Revision Loop...")
-    drafter = ProseDrafterAgent(llm_client)
-    reviewer = MasterAdversarialReviewer(llm_client)
-    story_state = state_mgr.get_story_state()
-
-    chapters_to_run = master_outline.chapters[:args.chapters] if args.chapters else master_outline.chapters
-    total_chapters = len(chapters_to_run)
-
-    for chapter_beat in chapters_to_run:
-        chap_num = chapter_beat.chapter_number
-        print(f"\n--------------------------------------------------------------------------------")
-        print(f"CHAPTER {chap_num}/{total_chapters}: {chapter_beat.title}")
-        print(f"--------------------------------------------------------------------------------")
-
-        chap_record = state_mgr.get_chapter_record(chap_num) if not args.reset else None
-        md_file_path = os.path.join(file_writer.output_dir, f"chapter_{chap_num:02d}.md")
-        if chap_record and chap_record.get("final_text") and os.path.exists(md_file_path) and os.path.getsize(md_file_path) > 100:
-            final_chapter_text = chap_record["final_text"]
-            chap_words = len(final_chapter_text.split())
-            print(f"  ✓ Chapter {chap_num} already finalized ({chap_words} words). Skipping draft phase.")
-            continue
-
-        revision_brief = None
-        final_chapter_text = ""
-
-        for rev in range(args.max_revisions + 1):
-            if rev > 0:
-                print(f"  [Agent: Prose Drafter] Executing Revision Loop {rev}/{args.max_revisions} based on Critics' Brief...")
-
-            draft_text = drafter.draft_chapter(
-                chapter_beat=chapter_beat,
-                world_bible=world_bible,
-                registry=character_registry,
-                story_state=story_state,
-                revision_brief=revision_brief
-            )
-
-            # Adversarial Critic Loop
-            print(f"  [Agent: Adversarial Critics] Auditing Chapter {chap_num} for Continuity & Anti-Slop Tropes...")
-            revision_brief = reviewer.evaluate_chapter(
-                chapter_beat=chapter_beat,
-                chapter_text=draft_text,
-                world_bible=world_bible,
-                registry=character_registry,
-                story_state=story_state
-            )
-
-            if revision_brief.passed_audit:
-                print(f"  ✓ [Critics Approval] Chapter {chap_num} passed adversarial audit clean!")
-                final_chapter_text = draft_text
-                break
-            else:
-                print(f"  ⚠️  [Critics Feedback] Found {len(revision_brief.continuity_issues)} continuity issue(s) & {len(revision_brief.slop_violations)} slop violation(s).")
-                final_chapter_text = draft_text
-
-        chap_words = len(final_chapter_text.split())
-        print(f"  ✓ Chapter {chap_num} Finalized: Total Word Count = {chap_words} words.")
-
-        # Persist Finalized Chapter to Disk
-        md_file = file_writer.write_markdown_chapter(chap_num, final_chapter_text)
-        print(f"  ✓ [Local File Writer] Chapter {chap_num} saved to: {md_file}")
-
-        state_mgr.save_chapter_record(chap_num, draft_text, revision_brief, final_chapter_text)
-
-        # Dynamic Story State Summarization for Rolling Context Window
-        print(f"  [Memory Engine] Updating Story Knowledge Graph & Memory block for Chapter {chap_num}...")
-        story_state = state_mgr.update_dynamic_story_state(
-            story_state=story_state,
-            chapter_number=chap_num,
-            chapter_title=chapter_beat.title,
-            chapter_text=final_chapter_text,
-            llm_client=llm_client,
-            language=language
-        )
-
-        # Live Incremental Disk Compilation Bridge
-        print(f"  [Disk Sync] Updating live .docx output on hard drive...")
-        try:
-            file_writer.compile_docx(
-                title=args.title,
-                domain=concept,
-                author=args.author,
-                docx_path=args.output,
-                language=language
-            )
-            print(f"  ✓ [Disk Sync] Live document '{os.path.basename(args.output)}' updated.")
-        except Exception as ex:
-            print(f"  [Disk Sync Warning] Document update skipped: {ex}")
-
-    # 4. Final Master Export
-    print("\n" + "=" * 80)
-    print("PHASE 4: Finalizing Commercial Publication Compilation...")
-    file_writer.compile_docx(
-        title=args.title,
-        domain=concept,
-        author=args.author,
-        docx_path=args.output,
-        language=language
-    )
-    print(f"🎉 SUCCESS: Multi-Agent Commercial Book successfully generated: {os.path.abspath(args.output)}")
-
-    epub_output = args.epub or (os.path.splitext(args.output)[0] + ".epub")
-    try:
-        file_writer.compile_epub(
-            title=args.title,
-            author=args.author,
-            epub_path=epub_output,
-            language=language
-        )
-        print(f"🎉 SUCCESS: Commercial EPUB 3 Edition compiled: {os.path.abspath(epub_output)}")
-    except Exception as ex:
-        print(f"  ⚠️ [EPUB Compilation Warning]: {ex}")
-
-    # Portable Lorebook & Character Cards Export (MuMu style)
-    if args.export_cards:
-        print(f"\n  [Lorebook Export] Exporting Character Cards and Lorebook to '{args.export_cards}'...")
-        cards_dir = Path(args.export_cards)
-        cards_dir.mkdir(parents=True, exist_ok=True)
-        for char in character_registry.characters:
-            char_card_file = cards_dir / f"{char.character_id}_{char.name.replace(' ', '_')}.json"
-            CardManager.export_character_card(char, char_card_file)
-        final_story_state = state_mgr.get_story_state()
-        CardManager.export_lorebook(
-            bible=world_bible,
-            registry=character_registry,
-            relationships=final_story_state.character_relationships if hasattr(final_story_state, 'character_relationships') else None,
-            output_path=cards_dir / "lorebook.json"
-        )
-        print(f"  ✓ Exported {len(character_registry.characters)} character cards & lorebook.json to '{args.export_cards}'.")
-
-    print("=" * 80 + "\n")
+    BookPipeline(config, llm_client).run()
 
 
 if __name__ == "__main__":
     main()
-

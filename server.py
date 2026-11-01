@@ -11,7 +11,8 @@ import glob
 import threading
 import subprocess
 import urllib.parse
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pipeline import book_dir_for, slugify
 
 PORT = 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,7 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
             return os.path.join(WEB_DIR, clean_path.lstrip("/"))
             
         target_path = os.path.abspath(os.path.join(WEB_DIR, clean_path.lstrip("/")))
-        if not target_path.startswith(os.path.abspath(WEB_DIR)):
+        if not target_path.startswith(os.path.abspath(WEB_DIR) + os.sep):
             return os.path.join(WEB_DIR, "index.html")
         return target_path
 
@@ -65,7 +66,8 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
             try:
                 chap_num = int(chap_num_str)
                 filename = f"chapter_{chap_num:02d}.md"
-                filepath = os.path.join(OUTPUT_DIR, filename)
+                job = JOBS.get(query_params.get("job_id", [""])[0]) or (list(JOBS.values())[-1] if JOBS else {})
+                filepath = os.path.join(job.get("manuscript_dir", OUTPUT_DIR), filename)
                 if os.path.exists(filepath):
                     with open(filepath, "r", encoding="utf-8") as f:
                         content = f.read()
@@ -104,6 +106,10 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         global JOB_COUNTER
         if self.path == "/api/generate":
+            # Browsers cannot send this type cross-site without a CORS approval, which this server never grants
+            if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                self.send_json_response({"error": "Content-Type must be application/json"}, status=415)
+                return
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length).decode("utf-8")
             
@@ -130,7 +136,6 @@ class BookGeneratorHandler(SimpleHTTPRequestHandler):
     def send_json_response(self, data, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
@@ -161,8 +166,8 @@ def run_generation_task(job_id, params):
             env_vars["TYPESAFE_API_KEY"] = api_key
         env_vars["LLM_API_KEY"] = api_key
 
-    output_filename = f"{title.replace(' ', '_')}_{job_id}.docx"
-    output_docx_path = os.path.join(OUTPUT_DIR, output_filename)
+    book_dir = os.path.join(BASE_DIR, book_dir_for(title))
+    output_docx_path = os.path.join(book_dir, f"{slugify(title)}.docx")
 
     job_record = {
         "job_id": job_id,
@@ -177,6 +182,7 @@ def run_generation_task(job_id, params):
         "message": f"World Builder Agent: Generating World Bible for '{title}'...",
         "active_title": title,
         "docx_path": output_docx_path,
+        "manuscript_dir": os.path.join(book_dir, "manuscript"),
         "error": "",
         "chapters": []
     }
@@ -185,7 +191,7 @@ def run_generation_task(job_id, params):
 
     chapters = str(params.get("chapters", "12"))
     cmd = [
-        sys.executable, "main.py",
+        sys.executable, "-u", "main.py",
         "--title", title,
         "--concept", concept,
         "--author", author,
@@ -193,8 +199,7 @@ def run_generation_task(job_id, params):
         "--genre", genre,
         "--provider", provider,
         "--chapters", chapters,
-        "--output", output_docx_path,
-        "--reset"
+        "--output", output_docx_path
     ]
     if model:
         cmd.extend(["--model", model])
@@ -229,23 +234,24 @@ def run_generation_task(job_id, params):
             elif "Agent: Master Outliner" in line_str:
                 job_record["phase"] = "outline"
                 job_record["progress_percent"] = 35
-                job_record["message"] = "Master Outliner Agent: Scaffolding 12-chapter beat sheet..."
-            elif "CHAPTER" in line_str and "CHAPTER 12/" not in line_str:
+                job_record["message"] = "Master Outliner Agent: Planning chapters and scenes..."
+            elif line_str.startswith("CHAPTER "):
                 job_record["phase"] = "draft"
                 try:
-                    num = int(line_str.split("CHAPTER")[1].split("/")[0].strip())
-                    job_record["progress_percent"] = 35 + int((num / 12) * 55)
-                    job_record["message"] = f"Prose Drafter & Adversarial Critics: Drafting Chapter {num}/12..."
+                    num, total = line_str.split("CHAPTER ")[1].split(":")[0].split("/")
+                    num, total = int(num), int(total)
+                    job_record["progress_percent"] = 35 + int((num / total) * 55)
+                    job_record["message"] = f"Prose Drafter & Adversarial Critics: Drafting Chapter {num}/{total}..."
                     
                     chap_file = f"chapter_{num:02d}.md"
                     if chap_file not in job_record["chapters"]:
                         job_record["chapters"].append(chap_file)
                 except Exception:
                     pass
-            elif "Compiling" in line_str or "Finalizing Commercial" in line_str:
+            elif "PHASE 4" in line_str or "PHASE 5" in line_str:
                 job_record["phase"] = "docx"
                 job_record["progress_percent"] = 95
-                job_record["message"] = "DOCX Compiler: Packaging 300-page bestseller document..."
+                job_record["message"] = "Release review, publishing kit and DOCX/EPUB compilation..."
 
         proc.wait()
 
@@ -254,7 +260,7 @@ def run_generation_task(job_id, params):
                 "status": "completed",
                 "phase": "completed",
                 "progress_percent": 100,
-                "message": f"Successfully generated '{title}' commercial DOCX manuscript!"
+                "message": f"Generated '{title}'. Read publishing/release_report.md before publishing."
             })
         else:
             job_record.update({
@@ -313,7 +319,8 @@ def main():
     os.makedirs(WEB_DIR, exist_ok=True)
     scan_existing_output_books()
 
-    server = HTTPServer(("0.0.0.0", PORT), BookGeneratorHandler)
+    # Loopback only: this API starts paid LLM jobs and has no authentication
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), BookGeneratorHandler)
     print("=" * 80)
     print(f"  BOOKGENERATOR AI (TAMIL ED.) - WEB APPLICATION SERVER")
     print("=" * 80)

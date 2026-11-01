@@ -22,17 +22,16 @@ pip install -r requirements.txt
 ```
 
 ### 3. Fast Single-Chapter Test Run
-Don't waste time generating full 12-chapter books during development! Run a single-chapter generation test:
+The offline suite covers the whole pipeline with a scripted model and costs nothing:
 ```bash
-python3 main.py \
-  --title "Test Book" \
-  --genre fiction \
-  --author "Pravin Tamilan" \
-  --provider ollama \
-  --model "deepseek-r1:latest" \
-  --reset \
-  --output "output/Test_Run.docx"
+python3 -m pytest
 ```
+
+To try a real model without generating a full book:
+```bash
+python3 main.py --title "Test Book" --concept "A specific original premise" --chapters 2 --target-words 4000 --provider ollama --reset
+```
+Output goes to `books/Test_Book/`.
 
 ---
 
