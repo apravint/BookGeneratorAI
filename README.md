@@ -165,6 +165,14 @@ Try two chapters first to judge quality before paying for a full book:
 python3 main.py -t "Sample Run" -c "Your concept" -n 2 --target-words 5000 --provider ollama
 ```
 
+Models grade their own prose leniently, so judge with a different, stronger model. This also keeps costs down, because the expensive model only reviews:
+
+```bash
+python3 main.py -t "Your Title" -c "Your concept" --provider gemini --editor-provider anthropic
+```
+
+If an account runs out of quota or credit, the run stops immediately with a clear message instead of retrying. Rerun the same command to resume.
+
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` for cloud providers. Local models are free, but small ones will rarely clear the editorial bar. Run the same command again to resume.
 
 To add real endorsements, put permissioned quotes in `books/<title>/manuscript/praise.md`.
@@ -183,6 +191,7 @@ To add real endorsements, put permissioned quotes in `books/<title>/manuscript/p
 | `--tamil` | | off | Shortcut for `--language tamil` |
 | `--provider` | `-p` | auto-detected | `ollama`, `gemini`, `openai`, `anthropic`, `jev` |
 | `--model` | `-m` | provider default | Model name |
+| `--editor-provider` / `--editor-model` | | same as writer | Separate model that scores chapters, picks the opening and reviews the book |
 | `--ollama-url` | | `http://localhost:11434` | Ollama endpoint |
 | `--chapters` | `-n` | `24` | Number of chapters |
 | `--scenes-per-chapter` | | `4` | Scenes per chapter |

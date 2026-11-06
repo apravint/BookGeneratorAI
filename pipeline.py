@@ -79,9 +79,11 @@ def _rank(brief: RevisionBrief) -> tuple:
 
 
 class BookPipeline:
-    def __init__(self, config: BookConfig, llm_client: LlmClient):
+    def __init__(self, config: BookConfig, llm_client: LlmClient, editor_llm: Optional[LlmClient] = None):
         self.config = config
         self.llm = llm_client
+        # Judging is done by a separate model when given, since models grade their own prose leniently
+        self.editor_llm = editor_llm or llm_client
         self.book_dir = book_dir_for(config.title, config.books_root)
         self.manuscript_dir = os.path.join(self.book_dir, "manuscript")
         self.publishing_dir = os.path.join(self.book_dir, "publishing")
@@ -104,7 +106,7 @@ class BookPipeline:
 
         print("\nPHASE 2 & 3: Execution & Adversarial Revision Loop...")
         self.drafter = ProseDrafterAgent(self.llm)
-        self.reviewer = MasterAdversarialReviewer(self.llm)
+        self.reviewer = MasterAdversarialReviewer(self.editor_llm)
         self.story_state = self.state.get_story_state()
         if not self.story_state.foreshadowing_clues:
             self.story_state.foreshadowing_clues = list(self.outline.foreshadowing)
@@ -126,7 +128,7 @@ class BookPipeline:
         print("\n" + "=" * 80)
         print("PHASE 4: Whole-Book Release Review...")
         chapters, briefs = self._load_finished_chapters()
-        result = BookReviewer(self.llm).review(config.title, self.brief, self.story_state, chapters, briefs, config.target_words)
+        result = BookReviewer(self.editor_llm).review(config.title, self.brief, self.story_state, chapters, briefs, config.target_words)
         report_path = BookReviewer.write_report(result, config.title, briefs, self.publishing_dir)
         if not self.brief.is_fiction:
             self._write_fact_check(chapters)
@@ -280,7 +282,7 @@ Return ONLY JSON: {{"best": 1}}
         system = "You are an acquiring editor choosing the opening most likely to make a stranger keep reading."
         validator = lambda choice: None if 1 <= choice.best <= len(candidates) else "'best' is out of range."
         try:
-            choice = generate_validated(self.llm, prompt, system, OpeningChoice, validator=validator, max_tokens=300)
+            choice = generate_validated(self.editor_llm, prompt, system, OpeningChoice, validator=validator, max_tokens=300)
             print(f"    -> Opening {choice.best} of {len(candidates)} selected.")
             return candidates[choice.best - 1]
         except StructuredOutputError as e:
