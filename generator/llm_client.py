@@ -13,9 +13,25 @@ import urllib.error
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504, 529}
 MAX_ATTEMPTS = 5
+MAX_SERVER_DELAY = 120
+# Billing or daily-limit exhaustion: waiting minutes will not help, so fail at once
+QUOTA_EXHAUSTED_MARKERS = ("insufficient_quota", "PerDay", "credit balance is too low", "billing_not_active")
 REQUEST_TIMEOUT = 600
 META_PREAMBLE = re.compile(r"^(okay|ok|sure|certainly|of course|here is|here's|below is|as an ai)\b", re.IGNORECASE)
 META_SUBJECT = re.compile(r"\b(chapter|scene|draft|manuscript|prose|revis|rewrit|json|beat|section)", re.IGNORECASE)
+
+
+class QuotaExceededError(RuntimeError):
+    """The account is out of quota or credit; retrying cannot succeed."""
+
+
+def _server_retry_delay(error: urllib.error.HTTPError, detail: str):
+    """Seconds the provider asked us to wait, from Retry-After or Gemini's RetryInfo."""
+    header = error.headers.get("Retry-After") if error.headers else None
+    if header and header.strip().isdigit():
+        return int(header)
+    match = re.search(r'"retryDelay":\s*"(\d+(?:\.\d+)?)s"', detail)
+    return float(match.group(1)) if match else None
 
 
 class LlmClient:
@@ -122,23 +138,38 @@ class LlmClient:
         return json.dumps(res_data.get("decisions", {}), ensure_ascii=False)
 
     def _post_json(self, url: str, payload: dict, headers: dict) -> dict:
-        """POST with exponential backoff on rate limits, server errors and dropped connections."""
+        """POST with backoff on rate limits, server errors and dropped connections; fails at once on exhausted quota."""
         body = json.dumps(payload).encode("utf-8")
         last_error = None
+        delay = 0
         for attempt in range(MAX_ATTEMPTS):
             if attempt:
-                delay = min(2 ** attempt, 60)
-                print(f"  [LLM Retry] {last_error}. Attempt {attempt + 1}/{MAX_ATTEMPTS} in {delay}s...")
+                print(f"  [LLM Retry] {last_error[:200]}. Attempt {attempt + 1}/{MAX_ATTEMPTS} in {delay:.0f}s...")
                 time.sleep(delay)
+            delay = min(2 ** (attempt + 1), 60)
             req = urllib.request.Request(url, data=body, headers=headers)
             try:
                 with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
                     return json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
-                detail = e.read().decode("utf-8", errors="replace")[:500]
-                last_error = f"HTTP {e.code} from {self.provider}: {detail}"
+                detail = e.read().decode("utf-8", errors="replace")
+                last_error = f"HTTP {e.code} from {self.provider}: {detail[:500]}"
+                if any(marker in detail for marker in QUOTA_EXHAUSTED_MARKERS):
+                    raise QuotaExceededError(
+                        f"{self.provider} account for model '{self.model}' is out of quota or credit. "
+                        f"Add billing, wait for the quota to reset, or switch --provider/--model. "
+                        f"Progress is saved; rerun the same command to resume.\n{detail[:500]}"
+                    )
                 if e.code not in RETRYABLE_STATUS:
                     break
+                requested = _server_retry_delay(e, detail)
+                if requested is not None:
+                    if requested > MAX_SERVER_DELAY:
+                        raise QuotaExceededError(
+                            f"{self.provider} asked to wait {requested:.0f}s before retrying model '{self.model}'. "
+                            f"Progress is saved; rerun the same command later to resume."
+                        )
+                    delay = requested + 1
             except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as e:
                 last_error = f"{self.provider} request failed: {e}"
         raise RuntimeError(f"LLM call failed for model '{self.model}': {last_error}")

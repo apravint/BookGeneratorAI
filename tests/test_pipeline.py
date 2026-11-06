@@ -87,6 +87,15 @@ class TestPipeline(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             pipeline.run()
 
+    def test_editor_model_does_all_judging(self):
+        writer, editor = FakeLlm(), FakeLlm()
+        config = BookConfig(title="Split", author="A", books_root=self.tmp.name, chapters=2, scenes_per_chapter=2, target_words=500, opening_candidates=2)
+        BookPipeline(config, writer, editor_llm=editor).run()
+        judging = {"chapter review", "book review", "choose opening"}
+        self.assertFalse(judging & set(writer.tasks))
+        self.assertTrue(judging <= set(editor.tasks))
+        self.assertNotIn("scene draft", editor.tasks)
+
     def test_slug_keeps_tamil_and_blocks_traversal(self):
         self.assertEqual(slugify("../../etc/passwd"), "etc_passwd")
         self.assertEqual(slugify("வேல்விழியின் சபதம்"), "வேல்விழியின்_சபதம்")

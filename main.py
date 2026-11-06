@@ -21,6 +21,8 @@ def main():
     parser.add_argument("--tamil", action="store_true", help="Shortcut for --language tamil")
     parser.add_argument("--provider", "-p", default=None, choices=["auto", "ollama", "jev", "openai", "gemini", "anthropic"], help="LLM provider (default: auto-detected from environment)")
     parser.add_argument("--model", "-m", default=None, help="Model name")
+    parser.add_argument("--editor-provider", default=None, choices=["ollama", "openai", "gemini", "anthropic"], help="Provider for the editor that scores chapters (default: same as --provider)")
+    parser.add_argument("--editor-model", default=None, help="Model for the editor that scores chapters. A different, stronger model judges more honestly")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama server URL")
     parser.add_argument("--chapters", "-n", type=int, default=24, help="Number of chapters (default: 24)")
     parser.add_argument("--scenes-per-chapter", type=int, default=4, help="Scenes in each chapter (default: 4)")
@@ -48,6 +50,9 @@ def main():
         resolved_provider = "gemini" if (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")) else "ollama"
 
     llm_client = LlmClient(provider=resolved_provider, model=args.model, ollama_url=args.ollama_url)
+    editor_llm = None
+    if args.editor_provider or args.editor_model:
+        editor_llm = LlmClient(provider=args.editor_provider or resolved_provider, model=args.editor_model, ollama_url=args.ollama_url)
 
     print("\n" + "=" * 80)
     print("  BOOKGENERATOR AI - MULTI-AGENT PIPELINE")
@@ -58,6 +63,8 @@ def main():
     print(f" Language:     {language.upper()}")
     print(f" Provider:     {llm_client.provider.upper()}")
     print(f" Model:        {llm_client.model}")
+    if editor_llm:
+        print(f" Editor:       {editor_llm.provider.upper()} / {editor_llm.model}")
     print(f" Plan:         {args.chapters} chapters, {args.scenes_per_chapter} scenes each, {args.target_words:,} words")
     print(f" Book Folder:  {book_dir_for(args.title)}")
     print("=" * 80 + "\n")
@@ -75,7 +82,7 @@ def main():
         output=args.output, epub=args.epub, cover=args.cover, reset=args.reset,
         export_cards=args.export_cards, import_lorebook=args.import_lorebook, publishing=publishing,
     )
-    BookPipeline(config, llm_client).run()
+    BookPipeline(config, llm_client, editor_llm=editor_llm).run()
 
 
 if __name__ == "__main__":
